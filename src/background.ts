@@ -1,3 +1,4 @@
+import { isRecordableUrl } from "./shared/capture";
 import type {
   ActiveSession,
   CaptureEvent,
@@ -97,21 +98,6 @@ function isBackgroundMessage(value: unknown): value is BackgroundMessage {
     "CONTENT_EVENT_BATCH",
     "OFFSCREEN_TERMINATED"
   ].includes(String((value as { type: unknown }).type));
-}
-
-function isRecordableUrl(value: string | undefined): value is string {
-  if (!value) return false;
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-    return ![
-      "chrome.google.com",
-      "chromewebstore.google.com",
-      "microsoftedge.microsoft.com"
-    ].includes(url.hostname);
-  } catch {
-    return false;
-  }
 }
 
 function makeSessionId(): string {
@@ -338,7 +324,16 @@ async function attachPageCapture(session: ActiveSession): Promise<void> {
   }
 }
 
-async function startPageScreencast(sessionId: string): Promise<void> {
+const SCREENCAST_PARAMS = {
+  format: "jpeg",
+  quality: 90,
+  everyNthFrame: 1
+} as const;
+
+async function startPageScreencast(
+  sessionId: string,
+  waitForFirstFrame = true
+): Promise<void> {
   const capture = activeScreencast;
   if (!capture || capture.sessionId !== sessionId || !capture.attached) {
     throw new Error("The cursor-free page capture was not prepared.");
@@ -349,11 +344,14 @@ async function startPageScreencast(sessionId: string): Promise<void> {
 
   capture.started = true;
   try {
-    await chrome.debugger.sendCommand(capture.target, "Page.startScreencast", {
-      format: "jpeg",
-      quality: 90,
-      everyNthFrame: 1
-    });
+    await chrome.debugger.sendCommand(
+      capture.target,
+      "Page.startScreencast",
+      { ...SCREENCAST_PARAMS }
+    );
+    // Resumed captures draw over the previous frame whenever the tab next
+    // paints, so only a fresh recording must block on its first clean frame.
+    if (!waitForFirstFrame) return;
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_resolve, reject) => {
@@ -371,6 +369,25 @@ async function startPageScreencast(sessionId: string): Promise<void> {
     await detachPageCapture(sessionId, capture.tabId);
     throw new Error(errorMessage(error));
   }
+}
+
+/**
+ * An in-place navigation (refresh or same-tab link) keeps the debugger
+ * attached but can stall the frame stream; stop/start kicks it back on.
+ */
+async function restartScreencast(capture: ActiveScreencast): Promise<void> {
+  if (activeScreencast !== capture || capture.stopping || !capture.attached) {
+    return;
+  }
+  await chrome.debugger
+    .sendCommand(capture.target, "Page.stopScreencast")
+    .catch(() => undefined);
+  if (activeScreencast !== capture || capture.stopping || !capture.attached) {
+    return;
+  }
+  await chrome.debugger
+    .sendCommand(capture.target, "Page.startScreencast", { ...SCREENCAST_PARAMS })
+    .catch(() => undefined);
 }
 
 async function haltPageScreencast(sessionId: string): Promise<void> {
@@ -811,6 +828,21 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.debugger.onEvent.addListener((source, method, rawParams) => {
+  if (method === "Page.frameNavigated") {
+    const frame = (rawParams as { frame?: { parentId?: string } } | undefined)
+      ?.frame;
+    const navigatedCapture = activeScreencast;
+    if (
+      !frame?.parentId &&
+      navigatedCapture &&
+      source.tabId === navigatedCapture.tabId &&
+      navigatedCapture.started &&
+      !navigatedCapture.stopping
+    ) {
+      void restartScreencast(navigatedCapture);
+    }
+    return;
+  }
   if (method !== "Page.screencastFrame") return;
   const params = (rawParams ?? {}) as ScreencastFrameParams;
   const capture = activeScreencast;
@@ -862,8 +894,25 @@ chrome.debugger.onDetach.addListener((source, reason) => {
   void getActiveSession()
     .then(async (active) => {
       if (!active || active.sessionId !== capture.sessionId) return;
-      if (active.status === "countdown") await cancelCountdown(active);
-      else await stopSession(active);
+      if (active.status === "countdown") {
+        await cancelCountdown(active);
+        return;
+      }
+      // A hard cross-process navigation can drop the attachment while the
+      // tab lives on. Re-attach and keep recording instead of giving up.
+      if (active.status === "recording" && !targetClosed) {
+        const tab = await chrome.tabs.get(active.tabId).catch(() => undefined);
+        if (tab && isRecordableUrl(tab.url)) {
+          try {
+            await attachPageCapture(active);
+            await startPageScreencast(active.sessionId, false);
+            return;
+          } catch {
+            // Fall through to the stop path below.
+          }
+        }
+      }
+      await stopSession(active);
       if (!targetClosed) {
         await showError(
           "Chrome ended the cursor-free page capture. Close DevTools and retry."
@@ -899,6 +948,117 @@ chrome.runtime.onMessage.addListener(
     return true;
   }
 );
+
+let tabFollowChain: Promise<void> = Promise.resolve();
+
+function queueTabFollow(tabId: number): void {
+  tabFollowChain = tabFollowChain
+    .then(() => followActiveTab(tabId))
+    .catch(() => undefined);
+}
+
+/**
+ * Move a live recording to the tab the user just switched to: telemetry off
+ * in the outgoing tab, screencast re-attached to the incoming one, and the
+ * incoming tab's content script joined to the running session.
+ */
+async function followActiveTab(tabId: number): Promise<void> {
+  const active = await getActiveSession();
+  if (
+    !active ||
+    active.status !== "recording" ||
+    active.startedAt === undefined ||
+    active.tabId === tabId
+  ) {
+    return;
+  }
+
+  const tab = await chrome.tabs.get(tabId).catch(() => undefined);
+  // Privileged pages cannot be captured. Keep the current target so the
+  // recording resumes the moment the user returns to a recordable tab.
+  if (!tab || !isRecordableUrl(tab.url)) return;
+
+  const previous = active;
+
+  // Flush and stop telemetry while the outgoing tab is still the session
+  // tab so its final event batches are accepted.
+  await sendToContent<BasicResult>(previous.tabId, {
+    type: "CONTENT_STOP",
+    sessionId: previous.sessionId
+  }).catch(() => undefined);
+
+  await detachPageCapture(previous.sessionId, previous.tabId);
+
+  const moved: ActiveSession = { ...previous, tabId, url: tab.url };
+  try {
+    await attachPageCapture(moved);
+    await startPageScreencast(moved.sessionId, false);
+  } catch (error) {
+    await recoverPreviousTarget(previous, error);
+    return;
+  }
+
+  const current = await getActiveSession();
+  if (
+    !current ||
+    current.sessionId !== moved.sessionId ||
+    current.status !== "recording"
+  ) {
+    await detachPageCapture(moved.sessionId, tabId);
+    return;
+  }
+
+  await setActiveSession(moved);
+  await sendToContent<BasicResult>(
+    tabId,
+    {
+      type: "CONTENT_RESUME",
+      sessionId: moved.sessionId,
+      startedAt: moved.startedAt
+    },
+    true
+  ).catch(() => undefined);
+}
+
+async function recoverPreviousTarget(
+  previous: ActiveSession,
+  error: unknown
+): Promise<void> {
+  try {
+    await attachPageCapture(previous);
+    await startPageScreencast(previous.sessionId, false);
+    await sendToContent<BasicResult>(
+      previous.tabId,
+      {
+        type: "CONTENT_RESUME",
+        sessionId: previous.sessionId,
+        startedAt: previous.startedAt
+      },
+      true
+    ).catch(() => undefined);
+  } catch {
+    const current = await getActiveSession();
+    if (current?.sessionId === previous.sessionId) {
+      await stopSession(current);
+      await showError(error);
+    }
+  }
+}
+
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  queueTabFollow(tabId);
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  void chrome.tabs
+    .query({ active: true, windowId })
+    .then((tabs) => {
+      const nextTabId = tabs[0]?.id;
+      if (nextTabId !== undefined) queueTabFollow(nextTabId);
+    })
+    .catch(() => undefined);
+});
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   void getActiveSession().then((active) => {
