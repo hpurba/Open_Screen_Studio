@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 const root = new URL("../dist/", import.meta.url);
@@ -22,4 +22,9 @@ for (const relativePath of required) {
 }
 
 await access(new URL("offscreen.html", root));
-console.log(`Verified ${required.size + 1} production extension files.`);
+await access(new URL("THIRD_PARTY_NOTICES.md", root));
+const assetNames = await readdir(new URL("assets/", root));
+if (!assetNames.some((name) => name.endsWith(".wasm"))) {
+  throw new Error("The production extension is missing its local MP4 encoder.");
+}
+console.log(`Verified ${required.size + 2} production extension files.`);

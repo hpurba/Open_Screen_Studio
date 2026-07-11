@@ -17,10 +17,11 @@ Acceptance:
 ## 2. Content-only recording
 
 - [x] Toggle recording from the extension action with a visible countdown and REC badge.
-- [x] Use `chrome.tabCapture.getMediaStreamId()` plus an offscreen document so only the active tab viewport is recorded.
-- [x] Capture tab audio when available and keep it audible locally during recording.
+- [x] Use `chrome.debugger` page-screencast frames plus an offscreen canvas so only the active website viewport is recorded and the operating-system cursor is never baked in.
+- [x] Keep `chrome.tabCapture.getMediaStreamId()` solely for tab audio and replay it locally during capture.
 - [x] Track normalized pointer moves, clicks, pointer visibility, and viewport changes separately.
-- [x] Remove the native page cursor from the raw capture and restore it reliably on stop/error.
+- [x] Keep the native cursor visible to the person recording without changing page cursor styles or baking it into the captured video.
+- [x] Suppress recorded cursor/scroll glyphs during active scrolling.
 - [x] Persist one-second MediaRecorder chunks incrementally in IndexedDB.
 - [x] Handle stop, tab closure, capture-track termination, restricted pages, and recorder errors without leaving stale UI.
 
@@ -28,7 +29,7 @@ Acceptance:
 
 - The recording contains website pixels but no Chrome address bar/tab strip.
 - Clicking the action a second time finalizes a project and opens it in the editor.
-- The source tab's cursor styling is restored even after a failed start or normal stop.
+- The source tab's cursor styling remains unchanged through countdown, recording, stop, and failure.
 
 ## 3. Effects engine
 
@@ -65,7 +66,7 @@ Acceptance:
 
 - [x] Draw background, framed/cropped video, camera zoom, smooth cursor, and click effects into one canvas.
 - [x] Preserve source audio in the composited export.
-- [x] Export the trimmed range at selectable size/FPS/quality as WebM.
+- [x] Export the trimmed range at selectable format/size/FPS/quality as WebM or locally transcoded H.264/AAC MP4.
 - [x] Show progress, support cancellation, choose a safe filename, and download the result.
 - [x] Keep preview and export output visually consistent.
 
@@ -73,13 +74,15 @@ Acceptance:
 
 - A recorded project can be edited and downloaded without an external service.
 - The downloaded file has non-zero duration, expected dimensions, and the selected effects.
+- MP4 conversion runs entirely inside the extension, reports its own progress phase, and remains cancellable.
 - Cursor-hidden ranges are absent in the exported frames, not just the preview.
 
 ## 6. Validation and delivery
 
 - [x] Add tests for reducers/storage migrations and critical editor interactions.
 - [x] Test the production build in an unpacked Chrome extension.
-- [x] Verify start/stop, pointer capture, auto zoom, manual zoom, follow, cursor hiding, project reopen, and export.
+- [x] Verify start/stop, the visible live cursor, cursor-free raw frames, scroll-glyph suppression, auto zoom, manual zoom, follow, cursor hiding, project reopen, and export.
+- [x] Verify both VP9/Opus WebM and locally converted H.264/AAC MP4 output in Chrome.
 - [x] Review permission copy, error states, empty states, and the README startup path.
 - [x] Open a GitHub PR with the complete diff, merge it into `main`, and verify the merged branch.
 

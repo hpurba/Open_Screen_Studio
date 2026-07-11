@@ -1,11 +1,21 @@
 import type { Project } from "../shared/types";
 import { drawCompositedFrame } from "./compositor";
+import { exportFilename } from "./exportFormat";
 import { clamp, outputSize } from "./utils";
+
+export type ExportProgress = {
+  phase: "render" | "transcode";
+  progress: number;
+};
 
 type ExportOptions = {
   project: Project;
   recording: Blob;
   signal?: AbortSignal;
+  onProgress?: (update: ExportProgress) => void;
+};
+
+type WebMRenderOptions = Omit<ExportOptions, "onProgress"> & {
   onProgress?: (progress: number) => void;
 };
 
@@ -48,22 +58,12 @@ const mimeTypeForExport = () => {
   return types.find((type) => MediaRecorder.isTypeSupported(type)) ?? "video/webm";
 };
 
-const safeFilename = (title: string) => {
-  const stem = title
-    .trim()
-    .replace(/[^a-z0-9-_ ]/gi, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 80);
-  return `${stem || "open-screen-recording"}.webm`;
-};
-
-export async function exportProject({
+async function renderProjectWebM({
   project,
   recording,
   signal,
   onProgress,
-}: ExportOptions) {
+}: WebMRenderOptions) {
   if (!recording.size) throw new Error("The recording is empty and cannot be exported.");
   if (typeof MediaRecorder === "undefined") {
     throw new Error("This browser does not support WebM export.");
@@ -161,7 +161,7 @@ export async function exportProject({
     signal?.removeEventListener("abort", abort);
     if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
     if (!result.size) throw new Error("The browser produced an empty export.");
-    return { blob: result, filename: safeFilename(project.title) };
+    return result;
   } finally {
     signal?.removeEventListener("abort", abort);
     cancelAnimationFrame(animation);
@@ -172,6 +172,38 @@ export async function exportProject({
     video.remove();
     URL.revokeObjectURL(sourceUrl);
   }
+}
+
+export async function exportProject(options: ExportOptions) {
+  const { project, signal, onProgress } = options;
+  const webm = await renderProjectWebM({
+    ...options,
+    onProgress: (progress) => onProgress?.({ phase: "render", progress }),
+  });
+  if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
+
+  const format = project.export.format ?? "webm";
+  if (format === "webm") {
+    return {
+      blob: webm,
+      filename: exportFilename(project.title, "webm"),
+    };
+  }
+
+  onProgress?.({ phase: "transcode", progress: 0 });
+  const { transcodeWebMToMp4 } = await import("./mp4Transcoder");
+  if (signal?.aborted) throw new DOMException("Export cancelled", "AbortError");
+  const mp4 = await transcodeWebMToMp4({
+    source: webm,
+    quality: project.export.quality,
+    signal,
+    onProgress: (progress) =>
+      onProgress?.({ phase: "transcode", progress }),
+  });
+  return {
+    blob: mp4,
+    filename: exportFilename(project.title, "mp4"),
+  };
 }
 
 export async function downloadExport(blob: Blob, filename: string) {

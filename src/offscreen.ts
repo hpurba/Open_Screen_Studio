@@ -22,6 +22,7 @@ type PrimedResult =
 
 type OffscreenMessage =
   | ({ type: "OFFSCREEN_PRIME" } & RecorderStartPayload)
+  | { type: "OFFSCREEN_SCREENCAST_FRAME"; sessionId: string; data: string }
   | { type: "OFFSCREEN_START"; sessionId: string }
   | { type: "OFFSCREEN_EVENT_BATCH"; sessionId: string; events: unknown[] }
   | { type: "OFFSCREEN_STOP"; sessionId: string }
@@ -29,8 +30,14 @@ type OffscreenMessage =
 
 type RecordingState = {
   payload: RecorderStartPayload;
-  stream: MediaStream;
-  recorder: MediaRecorder;
+  tabStream: MediaStream;
+  outputStream?: MediaStream;
+  recorder?: MediaRecorder;
+  canvas: HTMLCanvasElement;
+  context: CanvasRenderingContext2D;
+  canvasTrack?: CanvasCaptureMediaStreamTrack;
+  framePump?: number;
+  hasScreencastFrame: boolean;
   mimeType: string;
   startedAt: number;
   width: number;
@@ -66,6 +73,7 @@ function isOffscreenMessage(value: unknown): value is OffscreenMessage {
   if (!value || typeof value !== "object" || !("type" in value)) return false;
   return [
     "OFFSCREEN_PRIME",
+    "OFFSCREEN_SCREENCAST_FRAME",
     "OFFSCREEN_START",
     "OFFSCREEN_EVENT_BATCH",
     "OFFSCREEN_STOP",
@@ -154,28 +162,132 @@ function selectMimeType(): string {
   return candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) ?? "";
 }
 
-function tabConstraints(streamId: string): MediaStreamConstraints {
+function tabAudioConstraints(streamId: string): MediaStreamConstraints {
   const mandatory = {
     chromeMediaSource: "tab",
     chromeMediaSourceId: streamId
   };
   return {
     audio: { mandatory },
-    video: { mandatory }
+    video: false
   } as unknown as MediaStreamConstraints;
 }
 
 async function replayTabAudio(state: RecordingState): Promise<void> {
-  if (state.stream.getAudioTracks().length === 0) return;
+  if (state.tabStream.getAudioTracks().length === 0) return;
   try {
     const context = new AudioContext();
-    const source = context.createMediaStreamSource(state.stream);
+    const source = context.createMediaStreamSource(state.tabStream);
     source.connect(context.destination);
     if (context.state === "suspended") await context.resume();
     state.audioContext = context;
     state.audioSource = source;
   } catch {
     // Recording remains useful if an enterprise autoplay policy blocks replay.
+  }
+}
+
+function installRecorderListeners(
+  state: RecordingState,
+  recorder: MediaRecorder
+): void {
+  recorder.addEventListener("dataavailable", (event: BlobEvent) => {
+    if (event.data.size === 0) return;
+    const chunkIndex = state.nextChunk++;
+    state.writeChain = state.writeChain.then(() =>
+      putRecordingChunk(state.payload.sessionId, chunkIndex, event.data)
+    );
+    void state.writeChain.catch((error: unknown) => {
+      state.writeError =
+        error instanceof Error ? error : new Error(String(error));
+      if (!state.stopping) {
+        void finalizeRecording(state, "storage-error", true);
+      }
+    });
+  });
+  recorder.addEventListener(
+    "stop",
+    () => {
+      state.resolveStopped();
+    },
+    { once: true }
+  );
+  recorder.addEventListener("error", (event: Event) => {
+    const possibleError = (event as Event & { error?: DOMException }).error;
+    state.writeError = new Error(
+      possibleError?.message || "Chrome's media recorder stopped unexpectedly."
+    );
+    if (!state.stopping && state.startedAt > 0) {
+      void finalizeRecording(state, "recorder-error", true);
+    }
+  });
+}
+
+function jpegBlobFromBase64(data: string): Blob {
+  if (!data || data.length > 50_000_000) {
+    throw new Error("Chrome sent an invalid or oversized page frame.");
+  }
+  const binary = atob(data);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: "image/jpeg" });
+}
+
+async function drawScreencastFrame(
+  sessionId: string,
+  data: string
+): Promise<
+  | { ok: true; width: number; height: number }
+  | FailureResult
+> {
+  const state = activeRecording;
+  if (!state || state.payload.sessionId !== sessionId) {
+    return { ok: false, error: "No matching page-frame recorder is active." };
+  }
+  if (state.stopping) {
+    return { ok: true, width: state.width, height: state.height };
+  }
+
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(jpegBlobFromBase64(data));
+    if (bitmap.width < 1 || bitmap.height < 1) {
+      throw new Error("Chrome sent an empty page frame.");
+    }
+
+    if (!state.hasScreencastFrame) {
+      state.width = bitmap.width;
+      state.height = bitmap.height;
+      state.canvas.width = state.width;
+      state.canvas.height = state.height;
+      state.context.imageSmoothingEnabled = true;
+      state.context.imageSmoothingQuality = "high";
+    }
+
+    state.context.setTransform(1, 0, 0, 1, 0, 0);
+    state.context.fillStyle = "#000";
+    state.context.fillRect(0, 0, state.width, state.height);
+    const scale = Math.min(
+      state.width / bitmap.width,
+      state.height / bitmap.height
+    );
+    const drawWidth = bitmap.width * scale;
+    const drawHeight = bitmap.height * scale;
+    state.context.drawImage(
+      bitmap,
+      (state.width - drawWidth) / 2,
+      (state.height - drawHeight) / 2,
+      drawWidth,
+      drawHeight
+    );
+    state.hasScreencastFrame = true;
+    return { ok: true, width: state.width, height: state.height };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  } finally {
+    bitmap?.close();
   }
 }
 
@@ -189,26 +301,25 @@ async function primeRecording(
     return { ok: false, error: "The recorder did not receive a capture stream." };
   }
 
-  let stream: MediaStream | undefined;
+  let tabStream: MediaStream | undefined;
   let state: RecordingState | undefined;
   try {
     await deleteRecordingChunks(payload.sessionId);
     void navigator.storage?.persist?.().catch(() => false);
-    stream = await navigator.mediaDevices.getUserMedia(
-      tabConstraints(payload.streamId)
+    tabStream = await navigator.mediaDevices.getUserMedia(
+      tabAudioConstraints(payload.streamId)
     );
+    const audioTracks = tabStream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      throw new Error("The captured tab did not provide an audio stream.");
+    }
 
-    const videoTrack = stream.getVideoTracks()[0];
-    if (!videoTrack) throw new Error("The captured tab did not provide video.");
-
-    const settings = videoTrack.getSettings();
-    const width = Math.max(1, Math.round(settings.width ?? 1280));
-    const height = Math.max(1, Math.round(settings.height ?? 720));
+    const canvas = document.createElement("canvas");
+    canvas.width = 2;
+    canvas.height = 2;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Chrome could not create the page-frame canvas.");
     const mimeType = selectMimeType();
-    const recorder = new MediaRecorder(stream, {
-      ...(mimeType ? { mimeType } : {}),
-      videoBitsPerSecond: 10_000_000
-    });
 
     let resolveStopped = (): void => undefined;
     const stopPromise = new Promise<void>((resolve) => {
@@ -216,12 +327,14 @@ async function primeRecording(
     });
     const recordingState: RecordingState = {
       payload,
-      stream,
-      recorder,
-      mimeType: recorder.mimeType || mimeType || "video/webm",
+      tabStream,
+      canvas,
+      context,
+      hasScreencastFrame: false,
+      mimeType: mimeType || "video/webm",
       startedAt: 0,
-      width,
-      height,
+      width: canvas.width,
+      height: canvas.height,
       events: [],
       nextChunk: 0,
       writeChain: Promise.resolve(),
@@ -233,59 +346,31 @@ async function primeRecording(
     state = recordingState;
     activeRecording = recordingState;
 
-    recorder.addEventListener("dataavailable", (event: BlobEvent) => {
-      if (event.data.size === 0) return;
-      const chunkIndex = recordingState.nextChunk++;
-      recordingState.writeChain = recordingState.writeChain.then(() =>
-        putRecordingChunk(payload.sessionId, chunkIndex, event.data)
+    for (const track of audioTracks) {
+      track.addEventListener(
+        "ended",
+        () => {
+          if (!recordingState.stopping && recordingState.startedAt > 0) {
+            void finalizeRecording(recordingState, "track-ended", true);
+          }
+        },
+        { once: true }
       );
-      void recordingState.writeChain.catch((error: unknown) => {
-        recordingState.writeError =
-          error instanceof Error ? error : new Error(String(error));
-        if (!recordingState.stopping) {
-          void finalizeRecording(recordingState, "storage-error", true);
-        }
-      });
-    });
-    recorder.addEventListener(
-      "stop",
-      () => {
-        recordingState.resolveStopped();
-      },
-      { once: true }
-    );
-    recorder.addEventListener("error", (event: Event) => {
-      const possibleError = (event as Event & { error?: DOMException }).error;
-      recordingState.writeError = new Error(
-        possibleError?.message || "Chrome's media recorder stopped unexpectedly."
-      );
-      if (!recordingState.stopping && recordingState.startedAt > 0) {
-        void finalizeRecording(recordingState, "recorder-error", true);
-      }
-    });
-    videoTrack.addEventListener(
-      "ended",
-      () => {
-        if (!recordingState.stopping && recordingState.startedAt > 0) {
-          void finalizeRecording(recordingState, "track-ended", true);
-        }
-      },
-      { once: true }
-    );
+    }
 
     await replayTabAudio(recordingState);
-    if (videoTrack.readyState === "ended") {
+    if (audioTracks.every((track) => track.readyState === "ended")) {
       throw new Error("The captured tab was closed before recording started.");
     }
     return {
       ok: true,
-      width,
-      height,
+      width: recordingState.width,
+      height: recordingState.height,
       mimeType: recordingState.mimeType
     };
   } catch (error) {
     if (state) await cleanupMedia(state);
-    else stream?.getTracks().forEach((track) => track.stop());
+    else tabStream?.getTracks().forEach((track) => track.stop());
     activeRecording = undefined;
     await deleteRecordingChunks(payload.sessionId).catch(() => undefined);
     return { ok: false, error: errorMessage(error) };
@@ -299,17 +384,46 @@ function beginRecording(
   if (!state || state.payload.sessionId !== sessionId) {
     return { ok: false, error: "The capture stream was not prepared." };
   }
-  if (state.startedAt > 0 || state.recorder.state !== "inactive") {
+  if (state.startedAt > 0 || state.recorder) {
     return { ok: false, error: "This capture stream has already started." };
   }
-  if (state.stream.getVideoTracks()[0]?.readyState !== "live") {
+  if (!state.hasScreencastFrame) {
+    return { ok: false, error: "Chrome did not provide a clean page frame." };
+  }
+  if (state.tabStream.getAudioTracks().every((track) => track.readyState !== "live")) {
     return { ok: false, error: "The captured tab was closed during countdown." };
   }
   if (state.writeError) return { ok: false, error: state.writeError.message };
 
   try {
+    const canvasStream = state.canvas.captureStream(0);
+    const canvasTrack = canvasStream
+      .getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined;
+    if (!canvasTrack) {
+      throw new Error("Chrome could not turn page frames into a video track.");
+    }
+    const outputStream = new MediaStream([
+      canvasTrack,
+      ...state.tabStream.getAudioTracks()
+    ]);
+    const recorder = new MediaRecorder(outputStream, {
+      ...(state.mimeType ? { mimeType: state.mimeType } : {}),
+      videoBitsPerSecond: 10_000_000
+    });
+    state.canvasTrack = canvasTrack;
+    state.outputStream = outputStream;
+    state.recorder = recorder;
+    state.mimeType = recorder.mimeType || state.mimeType || "video/webm";
+    installRecorderListeners(state, recorder);
+
     state.startedAt = Date.now();
-    state.recorder.start(1_000);
+    recorder.start(1_000);
+    canvasTrack.requestFrame();
+    state.framePump = window.setInterval(() => {
+      if (!state.stopping && canvasTrack.readyState === "live") {
+        canvasTrack.requestFrame();
+      }
+    }, 1_000 / 30);
     return {
       ok: true,
       startedAt: state.startedAt,
@@ -318,6 +432,16 @@ function beginRecording(
       mimeType: state.mimeType
     };
   } catch (error) {
+    if (state.framePump !== undefined) {
+      window.clearInterval(state.framePump);
+      state.framePump = undefined;
+    }
+    state.outputStream?.getTracks().forEach((track) => {
+      if (!state.tabStream.getTracks().includes(track)) track.stop();
+    });
+    state.outputStream = undefined;
+    state.canvasTrack = undefined;
+    state.recorder = undefined;
     state.startedAt = 0;
     return { ok: false, error: errorMessage(error) };
   }
@@ -340,17 +464,18 @@ function appendEvents(sessionId: string, values: unknown[]): FailureResult | { o
 }
 
 function waitForRecorderStop(state: RecordingState): Promise<void> {
-  if (state.recorder.state === "inactive") {
+  const recorder = state.recorder;
+  if (!recorder || recorder.state === "inactive") {
     state.resolveStopped();
     return state.stopPromise;
   }
 
   try {
-    state.recorder.requestData();
+    recorder.requestData();
   } catch {
     // Some Chromium versions reject requestData immediately before stop().
   }
-  state.recorder.stop();
+  recorder.stop();
   return Promise.race([
     state.stopPromise,
     new Promise<void>((resolve) => window.setTimeout(resolve, 5_000))
@@ -358,7 +483,15 @@ function waitForRecorderStop(state: RecordingState): Promise<void> {
 }
 
 async function cleanupMedia(state: RecordingState): Promise<void> {
-  state.stream.getTracks().forEach((track) => track.stop());
+  if (state.framePump !== undefined) {
+    window.clearInterval(state.framePump);
+    state.framePump = undefined;
+  }
+  const tracks = new Set<MediaStreamTrack>([
+    ...state.tabStream.getTracks(),
+    ...(state.outputStream?.getTracks() ?? [])
+  ]);
+  tracks.forEach((track) => track.stop());
   try {
     state.audioSource?.disconnect();
   } catch {
@@ -482,12 +615,11 @@ chrome.runtime.onMessage.addListener(
       return false;
     }
 
-    let operation:
-      | Promise<RecorderStartResult | FailureResult>
-      | Promise<RecorderResult>
-      | Promise<{ ok: true } | FailureResult>;
+    let operation: Promise<unknown>;
     if (message.type === "OFFSCREEN_PRIME") {
       operation = primeRecording(message);
+    } else if (message.type === "OFFSCREEN_SCREENCAST_FRAME") {
+      operation = drawScreencastFrame(message.sessionId, message.data);
     } else if (message.type === "OFFSCREEN_START") {
       operation = Promise.resolve(beginRecording(message.sessionId));
     } else if (message.type === "OFFSCREEN_STOP") {

@@ -325,14 +325,6 @@ function drawCursor(
     context.closePath();
     context.fill();
     context.stroke();
-  } else if (kind === "grab" || kind === "grabbing") {
-    context.fillStyle = "white";
-    context.strokeStyle = "#151515";
-    context.lineWidth = Math.max(1.5, size * 0.06);
-    context.beginPath();
-    context.arc(0, 0, size * (kind === "grabbing" ? 0.3 : 0.34), 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
   } else {
     context.fillStyle = "white";
     context.strokeStyle = "#151515";

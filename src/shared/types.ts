@@ -88,6 +88,7 @@ export type FrameSettings = {
 };
 
 export type ExportSettings = {
+  format: "webm" | "mp4";
   width: 1280 | 1920;
   fps: 30 | 60;
   quality: "standard" | "high";

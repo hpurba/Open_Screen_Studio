@@ -11,6 +11,8 @@ const CONTENT_SCRIPT_PATH = "assets/content.js";
 const OFFSCREEN_PATH = "offscreen.html";
 const RECORDING_COLOR = "#ef4444";
 const ERROR_COLOR = "#f59e0b";
+const DEBUGGER_PROTOCOL_VERSION = "1.3";
+const FIRST_SCREENCAST_FRAME_TIMEOUT_MS = 8_000;
 
 type BasicResult = { ok: true } | FailureResult;
 type StreamIdResult = { ok: true; streamId: string } | FailureResult;
@@ -23,6 +25,33 @@ type PreparedResult = BasicResult & {
   dpr?: number;
 };
 type FinalResult = RecorderStopResult | FailureResult;
+
+type ScreencastFrameResult = BasicResult & {
+  width?: number;
+  height?: number;
+};
+
+type ScreencastFrameParams = {
+  data?: unknown;
+  sessionId?: unknown;
+};
+
+type ActiveScreencast = {
+  sessionId: string;
+  tabId: number;
+  target: chrome.debugger.Debuggee;
+  attached: boolean;
+  started: boolean;
+  halted: boolean;
+  stopping: boolean;
+  firstFrameSettled: boolean;
+  firstFrame: Promise<void>;
+  resolveFirstFrame: () => void;
+  rejectFirstFrame: (error: Error) => void;
+  frameChain: Promise<void>;
+  attachPromise?: Promise<void>;
+  haltPromise?: Promise<void>;
+};
 
 type BackgroundMessage =
   | { type: "CONTENT_READY" }
@@ -42,6 +71,7 @@ type BackgroundMessage =
 let creatingOffscreen: Promise<void> | undefined;
 let activeSessionCache: ActiveSession | undefined;
 let sessionCacheKnown = false;
+let activeScreencast: ActiveScreencast | undefined;
 const stoppingSessions = new Set<string>();
 const completedSessions = new Set<string>();
 
@@ -52,6 +82,9 @@ function errorMessage(error: unknown): string {
   }
   if (/cannot access|chrome:\/\/|web store/i.test(message)) {
     return "Chrome does not allow extensions to record or inspect this page.";
+  }
+  if (/another debugger|already attached|cannot attach/i.test(message)) {
+    return "Close DevTools or any other debugger attached to this tab, then try again.";
   }
   return message;
 }
@@ -192,6 +225,208 @@ async function sendToOffscreen<T>(message: unknown): Promise<T> {
   return (await chrome.runtime.sendMessage(message)) as T;
 }
 
+function sendFrameToOffscreen<T>(message: unknown): Promise<T> {
+  // Priming creates the offscreen document before Page.startScreencast. Avoid
+  // probing document existence for every JPEG on this frame-rate hot path.
+  return chrome.runtime.sendMessage(message) as Promise<T>;
+}
+
+function settleFirstScreencastFrame(
+  capture: ActiveScreencast,
+  error?: Error
+): void {
+  if (capture.firstFrameSettled) return;
+  capture.firstFrameSettled = true;
+  if (error) capture.rejectFirstFrame(error);
+  else capture.resolveFirstFrame();
+}
+
+async function acknowledgeScreencastFrame(
+  target: chrome.debugger.Debuggee,
+  frameSessionId: number
+): Promise<void> {
+  await chrome.debugger
+    .sendCommand(target, "Page.screencastFrameAck", {
+      sessionId: frameSessionId
+    })
+    .then(() => undefined)
+    .catch(() => undefined);
+}
+
+async function forwardScreencastFrame(
+  capture: ActiveScreencast,
+  source: chrome.debugger.DebuggerSession,
+  params: ScreencastFrameParams
+): Promise<void> {
+  const frameSessionId = Number(params.sessionId);
+  const data = typeof params.data === "string" ? params.data : "";
+
+  try {
+    if (!Number.isFinite(frameSessionId) || !data) {
+      throw new Error("Chrome sent an invalid page frame.");
+    }
+    if (capture.stopping || activeScreencast !== capture) return;
+    const result = await sendFrameToOffscreen<ScreencastFrameResult>({
+      type: "OFFSCREEN_SCREENCAST_FRAME",
+      sessionId: capture.sessionId,
+      data
+    });
+    if (!result?.ok) {
+      throw new Error(result?.error || "The page frame could not be decoded.");
+    }
+    settleFirstScreencastFrame(capture);
+  } finally {
+    if (Number.isFinite(frameSessionId)) {
+      await acknowledgeScreencastFrame(source, frameSessionId);
+    }
+  }
+}
+
+async function attachPageCapture(session: ActiveSession): Promise<void> {
+  if (activeScreencast) {
+    throw new Error("Another cursor-free page capture is already active.");
+  }
+
+  let resolveFirstFrame = (): void => undefined;
+  let rejectFirstFrame = (_error: Error): void => undefined;
+  const firstFrame = new Promise<void>((resolve, reject) => {
+    resolveFirstFrame = resolve;
+    rejectFirstFrame = reject;
+  });
+  // A cancellation can reject the deferred frame before the start path reaches
+  // its await. Keep that expected rejection from becoming an unhandled promise.
+  void firstFrame.catch(() => undefined);
+
+  const capture: ActiveScreencast = {
+    sessionId: session.sessionId,
+    tabId: session.tabId,
+    target: { tabId: session.tabId },
+    attached: false,
+    started: false,
+    halted: false,
+    stopping: false,
+    firstFrameSettled: false,
+    firstFrame,
+    resolveFirstFrame,
+    rejectFirstFrame,
+    frameChain: Promise.resolve()
+  };
+  activeScreencast = capture;
+
+  const attachPromise = (async () => {
+    await chrome.debugger.attach(capture.target, DEBUGGER_PROTOCOL_VERSION);
+    capture.attached = true;
+    if (activeScreencast !== capture || capture.stopping) {
+      await chrome.debugger.detach(capture.target).catch(() => undefined);
+      capture.attached = false;
+      throw new Error("The cursor-free page capture was cancelled.");
+    }
+    await chrome.debugger.sendCommand(capture.target, "Page.enable");
+    if (activeScreencast !== capture || capture.stopping) {
+      await chrome.debugger.detach(capture.target).catch(() => undefined);
+      capture.attached = false;
+      throw new Error("The cursor-free page capture was cancelled.");
+    }
+  })();
+  capture.attachPromise = attachPromise;
+
+  try {
+    await attachPromise;
+  } catch (error) {
+    await detachPageCapture(session.sessionId, session.tabId);
+    throw new Error(errorMessage(error));
+  }
+}
+
+async function startPageScreencast(sessionId: string): Promise<void> {
+  const capture = activeScreencast;
+  if (!capture || capture.sessionId !== sessionId || !capture.attached) {
+    throw new Error("The cursor-free page capture was not prepared.");
+  }
+  if (capture.started) {
+    throw new Error("The cursor-free page capture has already started.");
+  }
+
+  capture.started = true;
+  try {
+    await chrome.debugger.sendCommand(capture.target, "Page.startScreencast", {
+      format: "jpeg",
+      quality: 90,
+      everyNthFrame: 1
+    });
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error("Chrome did not provide the first page frame.")),
+        FIRST_SCREENCAST_FRAME_TIMEOUT_MS
+      );
+    });
+    try {
+      await Promise.race([capture.firstFrame, timeout]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
+  } catch (error) {
+    await detachPageCapture(sessionId, capture.tabId);
+    throw new Error(errorMessage(error));
+  }
+}
+
+async function haltPageScreencast(sessionId: string): Promise<void> {
+  const capture = activeScreencast;
+  if (!capture || capture.sessionId !== sessionId) return;
+  if (capture.haltPromise) return capture.haltPromise;
+  capture.stopping = true;
+
+  capture.haltPromise = (async () => {
+    if (capture.started && !capture.halted && capture.attached) {
+      capture.halted = true;
+      await chrome.debugger
+        .sendCommand(capture.target, "Page.stopScreencast")
+        .then(() => undefined)
+        .catch(() => undefined);
+    }
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(resolve, 3_000);
+    });
+    try {
+      await Promise.race([capture.frameChain.catch(() => undefined), timeout]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
+  })();
+  return capture.haltPromise;
+}
+
+async function detachPageCapture(
+  sessionId: string,
+  fallbackTabId?: number
+): Promise<void> {
+  const capture = activeScreencast;
+  if (capture?.sessionId === sessionId) {
+    capture.stopping = true;
+    await capture.attachPromise?.catch(() => undefined);
+    await haltPageScreencast(sessionId);
+    settleFirstScreencastFrame(
+      capture,
+      new Error("The cursor-free page capture was cancelled.")
+    );
+    if (activeScreencast === capture) activeScreencast = undefined;
+    if (capture.attached) {
+      await chrome.debugger.detach(capture.target).catch(() => undefined);
+    }
+    return;
+  }
+
+  if (fallbackTabId !== undefined) {
+    await chrome.debugger
+      .detach({ tabId: fallbackTabId })
+      .catch(() => undefined);
+  }
+}
+
 async function startSession(
   tab: chrome.tabs.Tab,
   streamIdPromise: Promise<StreamIdResult>
@@ -227,8 +462,8 @@ async function startSession(
     let current = await getActiveSession();
     if (!current || current.sessionId !== session.sessionId) return;
 
-    // Consume the short-lived tab stream id immediately. MediaRecorder itself
-    // starts only after the overlay disappears, so countdown pixels are omitted.
+    // Consume the short-lived tab stream id immediately. Its audio track is
+    // retained while cursor-free page frames provide the recorded video.
     const primed = await sendToOffscreen<PrimedResult>({
       type: "OFFSCREEN_PRIME",
       sessionId: session.sessionId,
@@ -249,6 +484,10 @@ async function startSession(
       return;
     }
 
+    // Attach before countdown so Chrome's debugger banner and any resulting
+    // viewport resize are already stable when the recording begins.
+    await attachPageCapture(session);
+
     const prepared = await sendToContent<PreparedResult>(
       session.tabId,
       {
@@ -268,8 +507,33 @@ async function startSession(
       current.sessionId !== session.sessionId ||
       current.status !== "countdown"
     ) {
-      await sendToContent<BasicResult>(session.tabId, {
-        type: "CONTENT_CANCEL",
+      await Promise.allSettled([
+        sendToContent<BasicResult>(session.tabId, {
+          type: "CONTENT_CANCEL",
+          sessionId: session.sessionId
+        }),
+        sendToOffscreen<BasicResult>({
+          type: "OFFSCREEN_ABORT",
+          sessionId: session.sessionId
+        }),
+        detachPageCapture(session.sessionId, session.tabId)
+      ]);
+      return;
+    }
+
+    // The countdown host has been removed. Wait until its first clean page
+    // frame is decoded into the recorder canvas before starting MediaRecorder.
+    await startPageScreencast(session.sessionId);
+
+    current = await getActiveSession();
+    if (
+      !current ||
+      current.sessionId !== session.sessionId ||
+      current.status !== "countdown"
+    ) {
+      await detachPageCapture(session.sessionId, session.tabId);
+      await sendToOffscreen<BasicResult>({
+        type: "OFFSCREEN_ABORT",
         sessionId: session.sessionId
       }).catch(() => undefined);
       return;
@@ -289,10 +553,13 @@ async function startSession(
       current.sessionId !== session.sessionId ||
       current.status !== "countdown"
     ) {
-      await sendToOffscreen<BasicResult>({
-        type: "OFFSCREEN_ABORT",
-        sessionId: session.sessionId
-      }).catch(() => undefined);
+      await Promise.allSettled([
+        sendToOffscreen<BasicResult>({
+          type: "OFFSCREEN_ABORT",
+          sessionId: session.sessionId
+        }),
+        detachPageCapture(session.sessionId, session.tabId)
+      ]);
       return;
     }
 
@@ -327,7 +594,8 @@ async function startSession(
       sendToOffscreen<BasicResult>({
         type: "OFFSCREEN_ABORT",
         sessionId: session.sessionId
-      })
+      }),
+      detachPageCapture(session.sessionId, session.tabId)
     ]);
     await clearActiveSession(session.sessionId);
     if (!completedSessions.has(session.sessionId)) await showError(error);
@@ -345,7 +613,8 @@ async function cancelCountdown(session: ActiveSession): Promise<void> {
     sendToOffscreen<BasicResult>({
       type: "OFFSCREEN_ABORT",
       sessionId: session.sessionId
-    })
+    }),
+    detachPageCapture(session.sessionId, session.tabId)
   ]);
   await clearActiveSession(session.sessionId);
   await Promise.all([
@@ -361,6 +630,7 @@ async function completeSession(
   if (completedSessions.has(session.sessionId)) return;
   completedSessions.add(session.sessionId);
 
+  await detachPageCapture(session.sessionId, session.tabId);
   await sendToContent<BasicResult>(session.tabId, {
     type: "CONTENT_STOP",
     sessionId: session.sessionId
@@ -396,15 +666,18 @@ async function stopSession(session: ActiveSession): Promise<void> {
       sessionId: session.sessionId
     }).catch(() => undefined);
 
+    await haltPageScreencast(session.sessionId);
     const result = await sendToOffscreen<FinalResult>({
-      type: "OFFSCREEN_STOP",
-      sessionId: session.sessionId
-    }).catch(
-      (error: unknown): FailureResult => ({
-        ok: false,
-        error: errorMessage(error)
+        type: "OFFSCREEN_STOP",
+        sessionId: session.sessionId
       })
-    );
+      .catch(
+        (error: unknown): FailureResult => ({
+          ok: false,
+          error: errorMessage(error)
+        })
+      )
+      .finally(() => detachPageCapture(session.sessionId, session.tabId));
     await completeSession(session, result);
   } finally {
     stoppingSessions.delete(session.sessionId);
@@ -509,7 +782,8 @@ async function discardStaleSession(): Promise<void> {
       sendToOffscreen<BasicResult>({
         type: "OFFSCREEN_ABORT",
         sessionId: active.sessionId
-      })
+      }),
+      detachPageCapture(active.sessionId, active.tabId)
     ]);
   }
   await clearActiveSession();
@@ -534,6 +808,69 @@ chrome.action.onClicked.addListener((tab) => {
           error: "Open a normal website before starting a recording."
         });
   void toggleRecording(tab, streamIdPromise).catch(showError);
+});
+
+chrome.debugger.onEvent.addListener((source, method, rawParams) => {
+  if (method !== "Page.screencastFrame") return;
+  const params = (rawParams ?? {}) as ScreencastFrameParams;
+  const capture = activeScreencast;
+
+  if (!capture || source.tabId !== capture.tabId) {
+    const frameSessionId = Number(params.sessionId);
+    if (Number.isFinite(frameSessionId)) {
+      void acknowledgeScreencastFrame(source, frameSessionId);
+    }
+    return;
+  }
+
+  const nextFrame = capture.frameChain.then(() =>
+    forwardScreencastFrame(capture, source, params)
+  );
+  capture.frameChain = nextFrame.catch(() => undefined);
+  void nextFrame.catch((error: unknown) => {
+    const failure = new Error(errorMessage(error));
+    const hadCleanFrame = capture.firstFrameSettled;
+    settleFirstScreencastFrame(capture, failure);
+    if (!hadCleanFrame || capture.stopping) return;
+    capture.stopping = true;
+
+    void getActiveSession()
+      .then(async (active) => {
+        if (!active || active.sessionId !== capture.sessionId) return;
+        if (active.status === "countdown") await cancelCountdown(active);
+        else await stopSession(active);
+        await showError(failure);
+      })
+      .catch(showError);
+  });
+});
+
+chrome.debugger.onDetach.addListener((source, reason) => {
+  const capture = activeScreencast;
+  if (!capture || source.tabId !== capture.tabId) return;
+
+  const expected = capture.stopping;
+  capture.attached = false;
+  if (activeScreencast === capture) activeScreencast = undefined;
+  settleFirstScreencastFrame(
+    capture,
+    new Error(`Chrome ended the page capture (${reason}).`)
+  );
+  if (expected) return;
+  const targetClosed = reason === "target_closed";
+
+  void getActiveSession()
+    .then(async (active) => {
+      if (!active || active.sessionId !== capture.sessionId) return;
+      if (active.status === "countdown") await cancelCountdown(active);
+      else await stopSession(active);
+      if (!targetClosed) {
+        await showError(
+          "Chrome ended the cursor-free page capture. Close DevTools and retry."
+        );
+      }
+    })
+    .catch(showError);
 });
 
 chrome.runtime.onMessage.addListener(

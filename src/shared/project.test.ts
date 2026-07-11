@@ -18,6 +18,26 @@ describe("project model", () => {
     expect(project.cursor.smoothing).toBeGreaterThan(0);
     expect(project.camera.autoZoom).toBe(true);
     expect(project.export.width).toBe(1920);
+    expect(project.export.format).toBe("webm");
+  });
+
+  it("backfills the WebM format for projects created before format selection", () => {
+    const base = createProject({
+      id: "legacy",
+      title: "Legacy demo",
+      sourceUrl: "",
+      duration: 1000,
+      sourceWidth: 100,
+      sourceHeight: 100,
+      mimeType: "video/webm",
+      events: [],
+    });
+    const legacy = {
+      ...base,
+      export: { width: 1280, fps: 30, quality: "standard" },
+    } as unknown as typeof base;
+
+    expect(normalizeProject(legacy).export.format).toBe("webm");
   });
 
   it("normalizes ranges and backfills missing editor collections", () => {

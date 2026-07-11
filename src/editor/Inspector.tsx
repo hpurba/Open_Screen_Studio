@@ -317,13 +317,15 @@ export function Inspector({
 
         {tab === "export" && (
           <>
-            <div className="inspector-heading"><span className="heading-icon"><Icon name="download" /></span><div><h2>Export</h2><p>Render locally as a WebM video.</p></div></div>
+            <div className="inspector-heading"><span className="heading-icon"><Icon name="download" /></span><div><h2>Export</h2><p>Download a WebM or compatible MP4.</p></div></div>
             <Section title="Video">
+              <Segmented label="Format" value={project.export.format ?? "webm"} options={[{ value: "webm", label: "WebM" }, { value: "mp4", label: "MP4" }]} onChange={(format) => updateNested("export", { format })} />
               <Segmented label="Long edge" value={project.export.width} options={[{ value: 1280, label: "1280" }, { value: 1920, label: "1920" }]} onChange={(width) => updateNested("export", { width })} />
               <Segmented label="Frame rate" value={project.export.fps} options={[{ value: 30, label: "30 fps" }, { value: 60, label: "60 fps" }]} onChange={(fps) => updateNested("export", { fps })} />
               <Segmented label="Quality" value={project.export.quality} options={[{ value: "standard", label: "Standard" }, { value: "high", label: "High" }]} onChange={(quality) => updateNested("export", { quality })} />
-              <div className="export-summary"><span>WebM · {dimensions.width} × {dimensions.height}</span><span>{formatDuration(project.trimEnd - project.trimStart)} · Real-time render</span></div>
-              <button className="primary-button export-panel-button" onClick={onExport}><Icon name="download" size={16} /> Export video</button>
+              <div className="export-summary"><span>{(project.export.format ?? "webm").toUpperCase()} · {dimensions.width} × {dimensions.height}</span><span>{formatDuration(project.trimEnd - project.trimStart)} · {project.export.format === "mp4" ? "Render + local H.264 conversion" : "Real-time render"}</span></div>
+              {project.export.format === "mp4" && <p className="section-copy compact export-format-note">MP4 is broadly compatible, but its offline conversion takes longer and uses more memory. WebM is the fastest option.</p>}
+              <button className="primary-button export-panel-button" onClick={onExport}><Icon name="download" size={16} /> Export {(project.export.format ?? "webm").toUpperCase()}</button>
             </Section>
             <div className="privacy-note"><Icon name="check" size={15} /><span>Rendered on this device. Nothing is uploaded.</span></div>
           </>

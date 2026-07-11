@@ -266,6 +266,7 @@ input[type="range"]::-webkit-slider-thumb { width: 13px; height: 13px; border: 2
 .range-summary strong { color: #d0cfd5; font-variant-numeric: tabular-nums; }
 .export-summary { display: flex; flex-direction: column; gap: 5px; margin: 4px 0 15px; padding: 10px; border-radius: 7px; color: #898993; background: rgba(255,255,255,.028); font-size: 8.5px; }
 .export-summary span:last-child { color: #62626c; }
+.export-format-note { margin: -2px 0 13px !important; }
 .export-panel-button { width: 100%; min-height: 35px; }
 .privacy-note { display: flex; align-items: flex-start; gap: 7px; margin: 14px 17px; color: #6f958e; font-size: 8.5px; line-height: 1.45; }
 

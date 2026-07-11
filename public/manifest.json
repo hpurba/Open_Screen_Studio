@@ -4,9 +4,10 @@
   "short_name": "Open Studio",
   "version": "0.1.0",
   "description": "Record polished Chrome demos with smooth cursor motion and automatic zooms.",
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "118",
   "permissions": [
     "activeTab",
+    "debugger",
     "downloads",
     "offscreen",
     "scripting",
@@ -15,6 +16,9 @@
     "unlimitedStorage"
   ],
   "host_permissions": ["http://*/*", "https://*/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'"
+  },
   "background": {
     "service_worker": "assets/background.js",
     "type": "module"

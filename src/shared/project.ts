@@ -34,6 +34,7 @@ export const DEFAULT_FRAME_SETTINGS: FrameSettings = {
 };
 
 export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
+  format: "webm",
   width: 1920,
   fps: 60,
   quality: "high",

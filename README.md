@@ -35,19 +35,20 @@ The first complete release covers the requested core workflow:
 4. Click the action again to stop and open the editor.
 5. Preview or adjust automatic/manual zooms, cursor smoothing/size, follow behavior, framing, and trim points.
 6. Add one or more timeline ranges where the cursor should be hidden; drag or resize those ranges after recording.
-7. Export the composited result as a WebM video.
+7. Export the composited result as a fast WebM or broadly compatible MP4 video.
 
 Intentionally out of scope: webcam/talking-head bubbles, cloud sharing, accounts, transcription, microphone enhancement, and system-wide desktop capture.
 
 ## Why a Chrome extension
 
-An operating-system window recording includes Chrome's toolbar. Chrome's [`tabCapture`](https://developer.chrome.com/docs/extensions/reference/api/tabCapture) API instead returns the active tab's visible content surface. Starting with Chrome 116, a user gesture can create a tab stream in the service worker and consume it from an [offscreen document](https://developer.chrome.com/docs/extensions/how-to/web-platform/screen-capture), allowing capture to continue while the user interacts with the page.
+An operating-system window recording includes Chrome's toolbar. Open Screen Studio instead records page frames from Chrome's [`Page.startScreencast`](https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-startScreencast) protocol and sends them to an [offscreen document](https://developer.chrome.com/docs/extensions/how-to/web-platform/screen-capture). Those frames contain the website viewport, not Chrome's tabs or address bar. Chrome's [`tabCapture`](https://developer.chrome.com/docs/extensions/reference/api/tabCapture) stream is retained only for the tab's audio.
 
-A content script records normalized pointer/click samples at the same time. The raw capture suppresses the page cursor and the editor draws a high-resolution synthetic cursor later. This is what makes smoothing, resizing, click effects, idle hiding, and section-level cursor hiding possible without changing the raw pixels.
+A content script records normalized pointer/click samples at the same time. The live native pointer remains visible and unchanged for the person recording, but Chrome's page frames omit that operating-system cursor. The editor draws a high-resolution synthetic cursor later. This is what makes smoothing, resizing, click effects, idle hiding, scrolling without a cursor glyph, and section-level cursor hiding possible without changing the raw pixels.
 
 ```mermaid
 flowchart LR
-    A["Chrome tab content"] -->|tabCapture stream| B["Offscreen recorder"]
+    A["Chrome tab content"] -->|cursor-free page frames| B["Offscreen canvas recorder"]
+    A -->|tabCapture audio| B
     C["Pointer + click events"] -->|normalized telemetry| B
     B -->|chunked WebM| D["IndexedDB project store"]
     B -->|events + metadata| D
@@ -55,6 +56,7 @@ flowchart LR
     E --> F["Shared frame compositor"]
     F --> G["Preview"]
     F --> H["WebM export"]
+    H -->|optional local H.264/AAC transcode| I["MP4 export"]
 ```
 
 ## Project data
@@ -74,7 +76,7 @@ Preview and export use the same pure frame calculations so the saved result matc
 
 ## Quick start
 
-Requirements: Chrome 116+ and Node.js 20.19+.
+Requirements: Chrome 118+ and Node.js 20.19+.
 
 ```bash
 npm install
@@ -107,21 +109,26 @@ After a development rebuild, press **Reload** on the extension card in `chrome:/
 ## Expected limitations
 
 - Chrome internal pages, the Chrome Web Store, browser permission prompts, browser autocomplete popovers, and DRM-protected video cannot be captured or instrumented.
+- Chrome shows its standard debugging banner while page-frame capture is active. DevTools or another debugger cannot be attached to the recorded tab at the same time.
+- Page frames are damage-driven and recorded at up to 30 fps. A 60 fps export remains available, but it cannot invent source motion that Chrome did not deliver.
 - The initial build targets the top-level page. Pointer tracking inside deeply nested cross-origin iframes may be incomplete.
-- Export is real-time and WebM-first because it uses Chrome's native `MediaRecorder`; MP4 transcoding is not bundled.
+- Every export is composited in real time through Chrome's native `MediaRecorder`. WebM downloads immediately after that render; MP4 then runs through the bundled single-thread ffmpeg.wasm encoder locally, so it takes longer and uses more memory.
 - Closing the recorded tab ends its media stream. Navigation is supported on ordinary pages, but unusual page security policies can affect telemetry reinjection.
 - Very long recordings depend on available browser storage and disk quota.
 
 ## Privacy and permissions
 
-The extension requests tab capture, offscreen recording, downloads, local storage, and page-script access on normal web URLs. Page access is used only to collect pointer/click/viewport events during an active recording and to temporarily hide the native page cursor. It does not collect keystroke contents, form values, cookies, page source, or browsing history.
+The extension requests debugger-based page-frame capture, tab audio capture, offscreen recording, downloads, local storage, and page-script access on normal web URLs. The debugger connection is attached only during an active recording and is used only for page screencast frames; it does not evaluate page JavaScript or inspect network traffic. Page access collects pointer/click/viewport/scroll events. The extension does not collect keystroke contents, form values, cookies, page source, or browsing history, and it does not alter the live browser cursor.
 
 ## Status
 
 Version 0.1 implements the full local record → edit → export workflow. The
 production extension has been validated in Chrome with a real tab capture,
 pointer/click telemetry, generated auto zoom, persisted cursor-hidden range,
-project reopen, and a 1920×1080 VP9/Opus export. Acceptance criteria are tracked
+project reopen, and local WebM/MP4 export. Acceptance criteria are tracked
 in [PLAN.md](./PLAN.md).
 
-Released under the [MIT License](./LICENSE).
+Open Screen Studio's own source is released under the [MIT License](./LICENSE).
+The optional bundled MP4 encoder remains under its upstream licenses, including
+GPL-2.0-or-later for `@ffmpeg/core`; see
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

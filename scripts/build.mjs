@@ -1,7 +1,9 @@
 import { build as esbuild } from "esbuild";
+import { copyFile } from "node:fs/promises";
 import { build as viteBuild } from "vite";
 
 await viteBuild();
+await copyFile("THIRD_PARTY_NOTICES.md", "dist/THIRD_PARTY_NOTICES.md");
 
 await Promise.all([
   esbuild({

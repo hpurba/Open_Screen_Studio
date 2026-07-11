@@ -1,4 +1,9 @@
 import type { CaptureEvent, CursorKind } from "./shared/types";
+import {
+  cursorKindFromCss,
+  SCROLL_CURSOR_HIDE_MS,
+  shouldShowRecordedCursor
+} from "./shared/cursor";
 
 type ContentCommand =
   | { type: "CONTENT_PREPARE"; sessionId: string; countdownSeconds?: number }
@@ -20,7 +25,7 @@ type PointerFrame = {
 };
 
 const CONTENT_RUNTIME_KEY = "__OPEN_SCREEN_STUDIO_CONTENT_RUNTIME__";
-const CURSOR_STYLE_ID = "open-screen-studio-hide-native-cursor";
+const STALE_CURSOR_STYLE_ID = "open-screen-studio-hide-native-cursor";
 const COUNTDOWN_HOST_ID = "open-screen-studio-countdown";
 
 function isCommand(value: unknown): value is ContentCommand {
@@ -50,7 +55,6 @@ class ContentCaptureRuntime {
   private prepared = false;
   private recording = false;
   private stopping = false;
-  private cursorStyle: HTMLStyleElement | undefined;
   private countdownHost: HTMLElement | undefined;
   private countdownCancel: (() => void) | undefined;
   private batch: CaptureEvent[] = [];
@@ -60,6 +64,8 @@ class ContentCaptureRuntime {
   private pointerAnimationFrame: number | undefined;
   private lastVisibility: boolean | undefined;
   private pointerInside = true;
+  private scrolling = false;
+  private scrollEndTimer: number | undefined;
 
   install(): void {
     // A development reload can tear down the old isolated world while leaving
@@ -154,11 +160,11 @@ class ContentCaptureRuntime {
     }
 
     this.removeCountdown();
+    await this.waitForCleanPaint();
     if (this.sessionId !== sessionId) {
       return { ok: false, error: "Recording countdown was cancelled." };
     }
 
-    await this.hideNativeCursor();
     this.prepared = true;
     return {
       ok: true,
@@ -185,7 +191,7 @@ class ContentCaptureRuntime {
     this.pointerInside = true;
     this.addTelemetryListeners();
     this.queueViewport();
-    this.queueVisibility(document.visibilityState === "visible");
+    this.queueVisibility(this.recordedCursorIsVisible());
     return { ok: true };
   }
 
@@ -195,7 +201,6 @@ class ContentCaptureRuntime {
   ): Promise<void> {
     await this.reset(false);
     this.sessionId = sessionId;
-    await this.hideNativeCursor();
     this.prepared = true;
     await this.start(sessionId, startedAt);
   }
@@ -247,6 +252,10 @@ class ContentCaptureRuntime {
       window.cancelAnimationFrame(this.pointerAnimationFrame);
       this.pointerAnimationFrame = undefined;
     }
+    if (this.scrollEndTimer !== undefined) {
+      window.clearTimeout(this.scrollEndTimer);
+      this.scrollEndTimer = undefined;
+    }
 
     this.sessionId = undefined;
     this.startedAt = undefined;
@@ -255,6 +264,7 @@ class ContentCaptureRuntime {
     this.stopping = false;
     this.pointerFrame = undefined;
     this.lastVisibility = undefined;
+    this.scrolling = false;
     if (clearEvents) this.batch = [];
   }
 
@@ -279,6 +289,14 @@ class ContentCaptureRuntime {
     window.visualViewport?.addEventListener("resize", this.onViewportChange, {
       passive: true
     });
+    window.addEventListener("wheel", this.onScrollActivity, {
+      capture: true,
+      passive: true
+    });
+    window.addEventListener("scroll", this.onScrollActivity, {
+      capture: true,
+      passive: true
+    });
     document.addEventListener("visibilitychange", this.onVisibilityChange, {
       passive: true
     });
@@ -291,13 +309,15 @@ class ContentCaptureRuntime {
     window.removeEventListener("pointerout", this.onPointerLeave, true);
     window.removeEventListener("resize", this.onViewportChange);
     window.visualViewport?.removeEventListener("resize", this.onViewportChange);
+    window.removeEventListener("wheel", this.onScrollActivity, true);
+    window.removeEventListener("scroll", this.onScrollActivity, true);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);
   }
 
   private readonly onPointerMove = (event: PointerEvent): void => {
     if (!this.recording || this.stopping) return;
     this.pointerInside = true;
-    this.queueVisibility(document.visibilityState === "visible");
+    this.queueVisibility(this.recordedCursorIsVisible());
     this.pointerFrame = {
       x: clampUnit(event.clientX / Math.max(1, window.innerWidth)),
       y: clampUnit(event.clientY / Math.max(1, window.innerHeight)),
@@ -327,7 +347,7 @@ class ContentCaptureRuntime {
   private readonly onPointerEnter = (event: PointerEvent): void => {
     if (event.relatedTarget !== null || !this.recording) return;
     this.pointerInside = true;
-    this.queueVisibility(document.visibilityState === "visible");
+    this.queueVisibility(this.recordedCursorIsVisible());
   };
 
   private readonly onPointerLeave = (event: PointerEvent): void => {
@@ -340,11 +360,25 @@ class ContentCaptureRuntime {
     if (this.recording && !this.stopping) this.queueViewport();
   };
 
+  private readonly onScrollActivity = (): void => {
+    if (!this.recording || this.stopping) return;
+    this.scrolling = true;
+    this.queueVisibility(false);
+    if (this.scrollEndTimer !== undefined) {
+      window.clearTimeout(this.scrollEndTimer);
+    }
+    this.scrollEndTimer = window.setTimeout(() => {
+      this.scrollEndTimer = undefined;
+      this.scrolling = false;
+      if (this.recording && !this.stopping) {
+        this.queueVisibility(this.recordedCursorIsVisible());
+      }
+    }, SCROLL_CURSOR_HIDE_MS);
+  };
+
   private readonly onVisibilityChange = (): void => {
     if (!this.recording) return;
-    this.queueVisibility(
-      document.visibilityState === "visible" && this.pointerInside
-    );
+    this.queueVisibility(this.recordedCursorIsVisible());
   };
 
   private commitPointerFrame(): void {
@@ -420,40 +454,27 @@ class ContentCaptureRuntime {
   }
 
   private cursorKind(target: Element | null): CursorKind {
-    let cursor = "default";
-    const style = this.cursorStyle;
     try {
-      if (style) style.disabled = true;
-      cursor = target ? getComputedStyle(target).cursor : "default";
+      return cursorKindFromCss(
+        target ? getComputedStyle(target).cursor : "default"
+      );
     } catch {
-      cursor = "default";
-    } finally {
-      if (style) style.disabled = false;
+      return "default";
     }
-
-    if (cursor === "none") return "hidden";
-    if (cursor === "pointer") return "pointer";
-    if (cursor === "text" || cursor === "vertical-text") return "text";
-    if (cursor === "grab") return "grab";
-    if (cursor === "grabbing") return "grabbing";
-    if (cursor === "crosshair" || cursor === "cell") return "crosshair";
-    return "default";
   }
 
-  private async hideNativeCursor(): Promise<void> {
-    await this.ensureDocumentElement();
-    this.restoreNativeCursor();
-    const style = document.createElement("style");
-    style.id = CURSOR_STYLE_ID;
-    style.textContent = "html, html *, body, body * { cursor: none !important; }";
-    document.documentElement.append(style);
-    this.cursorStyle = style;
+  private recordedCursorIsVisible(): boolean {
+    return shouldShowRecordedCursor({
+      documentVisible: document.visibilityState === "visible",
+      pointerInside: this.pointerInside,
+      scrolling: this.scrolling
+    });
   }
 
   private restoreNativeCursor(): void {
-    this.cursorStyle?.remove();
-    this.cursorStyle = undefined;
-    document.getElementById(CURSOR_STYLE_ID)?.remove();
+    // Remove the style left by versions that hid the live pointer. Current
+    // captures never alter the browser cursor seen by the person recording.
+    document.getElementById(STALE_CURSOR_STYLE_ID)?.remove();
   }
 
   private async showCountdown(value: number): Promise<void> {
@@ -509,6 +530,22 @@ class ContentCaptureRuntime {
       const timer = window.setTimeout(() => finish(true), 1_000);
       const cancel = (): void => finish(false);
       this.countdownCancel = cancel;
+    });
+  }
+
+  private waitForCleanPaint(): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(fallback);
+        resolve();
+      };
+      const fallback = window.setTimeout(finish, 300);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(finish);
+      });
     });
   }
 

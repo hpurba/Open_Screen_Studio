@@ -79,7 +79,12 @@ function ProjectLoader({ projectId, onBack }: { projectId: string; onBack: () =>
 
 type ExportState =
   | { status: "idle" }
-  | { status: "running"; progress: number; controller: AbortController }
+  | {
+      status: "running";
+      phase: "render" | "transcode";
+      progress: number;
+      controller: AbortController;
+    }
   | { status: "error"; message: string }
   | { status: "done" };
 
@@ -136,13 +141,14 @@ function EditorWorkspace({
     }
     setPlaying(false);
     const controller = new AbortController();
-    setExportState({ status: "running", progress: 0, controller });
+    setExportState({ status: "running", phase: "render", progress: 0, controller });
     try {
       const result = await exportProject({
         project,
         recording,
         signal: controller.signal,
-        onProgress: (progress) => setExportState({ status: "running", progress, controller }),
+        onProgress: ({ phase, progress }) =>
+          setExportState({ status: "running", phase, progress, controller }),
       });
       await downloadExport(result.blob, result.filename);
       setExportState({ status: "done" });
@@ -226,11 +232,11 @@ function EditorWorkspace({
         <div className="export-overlay" role="dialog" aria-modal="true" aria-labelledby="export-title">
           <div className="export-dialog">
             <div className="export-animation"><Icon name="film" size={24} /><span style={{ width: `${Math.round(exportState.progress * 100)}%` }} /></div>
-            <span className="eyebrow">Rendering on this device</span>
-            <h2 id="export-title">Exporting your video</h2>
-            <p>Keep this editor open while every frame is composited. Audio and visual effects are rendered in real time.</p>
+            <span className="eyebrow">{exportState.phase === "transcode" ? "Offline MP4 conversion" : "Rendering on this device"}</span>
+            <h2 id="export-title">{exportState.phase === "transcode" ? "Creating your MP4" : "Compositing your video"}</h2>
+            <p>{exportState.phase === "transcode" ? "The bundled single-thread encoder is creating H.264 video and AAC audio. This can take longer than the initial render." : `Keep this editor open while every frame is composited${project.export.format === "mp4" ? ". MP4 conversion starts next" : " with its audio and effects"}.`}</p>
             <div className="export-progress"><span style={{ width: `${Math.round(exportState.progress * 100)}%` }} /></div>
-            <div className="export-progress-label"><strong>{Math.round(exportState.progress * 100)}%</strong><span>About {Math.max(0, Math.ceil(((project.trimEnd - project.trimStart) / 1000) * (1 - exportState.progress)))}s remaining</span></div>
+            <div className="export-progress-label"><strong>{Math.round(exportState.progress * 100)}%</strong><span>{exportState.phase === "transcode" ? "Encoding locally · no upload" : `About ${Math.max(0, Math.ceil(((project.trimEnd - project.trimStart) / 1000) * (1 - exportState.progress)))}s remaining`}</span></div>
             <button className="button button-wide" onClick={() => exportState.controller.abort()}>Cancel export</button>
           </div>
         </div>
@@ -239,7 +245,7 @@ function EditorWorkspace({
       {exportState.status === "error" && (
         <div className="toast error" role="alert"><Icon name="info" size={17} /><span>{exportState.message}</span><button onClick={() => setExportState({ status: "idle" })} aria-label="Dismiss">×</button></div>
       )}
-      {exportState.status === "done" && <div className="toast success" role="status"><Icon name="check" size={17} /><span>Export finished. Your download is ready.</span></div>}
+      {exportState.status === "done" && <div className="toast success" role="status"><Icon name="check" size={17} /><span>{(project.export.format ?? "webm").toUpperCase()} export finished. Your download is ready.</span></div>}
     </div>
   );
 }
