@@ -1,0 +1,46 @@
+import { Icon } from "./icons";
+import { clamp, formatDuration } from "./utils";
+
+type TransportProps = {
+  time: number;
+  start: number;
+  end: number;
+  playing: boolean;
+  disabled?: boolean;
+  onTimeChange: (time: number) => void;
+  onPlayingChange: (playing: boolean) => void;
+};
+
+export function Transport({
+  time,
+  start,
+  end,
+  playing,
+  disabled,
+  onTimeChange,
+  onPlayingChange,
+}: TransportProps) {
+  const jump = (amount: number) => onTimeChange(clamp(time + amount, start, end));
+  return (
+    <div className="transport" aria-label="Playback controls">
+      <div className="transport-time current">{formatDuration(time, true)}</div>
+      <div className="transport-center">
+        <button className="icon-button transport-skip" onClick={() => jump(-5000)} aria-label="Go back 5 seconds">
+          <span>−5</span>
+        </button>
+        <button
+          className="play-button"
+          onClick={() => onPlayingChange(!playing)}
+          aria-label={playing ? "Pause" : "Play"}
+          disabled={disabled}
+        >
+          <Icon name={playing ? "pause" : "play"} size={18} />
+        </button>
+        <button className="icon-button transport-skip" onClick={() => jump(5000)} aria-label="Go forward 5 seconds">
+          <span>+5</span>
+        </button>
+      </div>
+      <div className="transport-time total">{formatDuration(end)}</div>
+    </div>
+  );
+}
