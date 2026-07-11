@@ -55,35 +55,32 @@ export function Library({ onOpenProject }: LibraryProps) {
     <div className="library-page">
       <header className="library-header">
         <a className="brand" href="#/" aria-label="Open Screen Studio home">
-          <BrandMark size={32} />
+          <BrandMark size={28} />
           <span>Open Screen Studio</span>
         </a>
         <div className="library-header-actions">
           <button className="button" onClick={() => setShowGuide(true)}>
-            <Icon name="info" size={16} /> How it works
+            <Icon name="info" size={14} /> How it works
           </button>
           <button className="primary-button" onClick={() => setShowGuide(true)}>
-            <span className="record-dot" /> New recording
+            <Icon name="record" size={14} /> New Recording
           </button>
         </div>
       </header>
 
       <main className="library-main">
-        <section className="library-hero">
-          <div>
-            <span className="eyebrow"><Icon name="sparkles" size={14} /> Local-first screen recorder</span>
-            <h1>Your recordings</h1>
-            <p>Turn Chrome tabs into focused product demos with smooth camera movement and an editable cursor.</p>
-          </div>
+        <div className="browser-head">
+          <h1>All Recordings</h1>
+          {!loading && <span>{projects.length === 1 ? "1 item" : `${projects.length} items`}</span>}
           {projects.length > 0 && (
             <label className="search-field">
-              <span aria-hidden="true">⌕</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search projects" aria-label="Search projects" />
+              <Icon name="search" size={13} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" aria-label="Search projects" />
             </label>
           )}
-        </section>
+        </div>
 
-        {error && <div className="library-alert" role="alert"><Icon name="info" size={17} /><span>{error}</span><button onClick={() => void load()}>Retry</button></div>}
+        {error && <div className="library-alert" role="alert"><Icon name="info" size={16} /><span>{error}</span><button onClick={() => void load()}>Retry</button></div>}
 
         {loading ? (
           <div className="project-grid" aria-label="Loading projects">
@@ -96,18 +93,18 @@ export function Library({ onOpenProject }: LibraryProps) {
               <div className="floating-cursor">↖</div>
               <div className="floating-zoom">1.8×</div>
             </div>
-            <span className="eyebrow">Ready when you are</span>
-            <h2>Record your first polished demo</h2>
+            <span className="eyebrow">Local-first recorder</span>
+            <h2>Record your first demo</h2>
             <p>Only the active website is captured—never Chrome’s tabs or address bar. Every zoom and cursor choice stays editable.</p>
-            <button className="primary-button large" onClick={() => setShowGuide(true)}><span className="record-dot" /> Start a recording</button>
+            <button className="primary-button large" onClick={() => setShowGuide(true)}><Icon name="record" size={15} /> Start a Recording</button>
             <div className="feature-row">
-              <span><Icon name="frame" size={15} /> Website only</span>
-              <span><Icon name="zoom-in" size={15} /> Automatic zoom</span>
-              <span><Icon name="eye-off" size={15} /> Hide cursor later</span>
+              <span><Icon name="frame" size={14} /> Website only</span>
+              <span><Icon name="zoom-in" size={14} /> Automatic zoom</span>
+              <span><Icon name="eye-off" size={14} /> Hide cursor later</span>
             </div>
           </section>
         ) : visibleProjects.length === 0 ? (
-          <section className="no-results"><Icon name="folder" size={26} /><h2>No matching projects</h2><p>Try a different title or website.</p><button className="button" onClick={() => setQuery("")}>Clear search</button></section>
+          <section className="no-results"><Icon name="search" size={24} /><h2>No matching recordings</h2><p>Try a different title or website.</p><button className="button" onClick={() => setQuery("")}>Clear Search</button></section>
         ) : (
           <section className="project-grid" aria-label="Projects">
             {visibleProjects.map((project, index) => (
@@ -115,7 +112,7 @@ export function Library({ onOpenProject }: LibraryProps) {
                 <button className="project-preview" onClick={() => onOpenProject(project.id)} aria-label={`Open ${project.title}`}>
                   <div className={`project-art art-${index % 4}`}>
                     <div className="project-browser"><span /><span /><span /><div><i /><i /><i /></div></div>
-                    <span className="project-play"><Icon name="play" size={18} /></span>
+                    <span className="project-play"><Icon name="play" size={16} /></span>
                   </div>
                   <span className="duration-badge">{formatDuration(project.duration)}</span>
                 </button>
@@ -124,11 +121,11 @@ export function Library({ onOpenProject }: LibraryProps) {
                     <strong>{project.title || "Untitled recording"}</strong>
                     <span>{safeHost(project.sourceUrl)} · {formatDate(project.updatedAt)}</span>
                   </button>
-                  <button className="icon-button project-delete" onClick={() => setDeleteCandidate(project)} aria-label={`Delete ${project.title}`} title="Delete project"><Icon name="trash" size={16} /></button>
+                  <button className="icon-button project-delete" onClick={() => setDeleteCandidate(project)} aria-label={`Delete ${project.title}`} title="Delete project"><Icon name="trash" size={15} /></button>
                 </div>
               </article>
             ))}
-            <button className="new-project-card" onClick={() => setShowGuide(true)}><span><Icon name="plus" size={20} /></span><strong>New recording</strong><small>Capture another Chrome tab</small></button>
+            <button className="new-project-card" onClick={() => setShowGuide(true)}><span><Icon name="plus" size={18} /></span><strong>New Recording</strong><small>Capture another Chrome tab</small></button>
           </section>
         )}
       </main>
@@ -149,7 +146,7 @@ export function Library({ onOpenProject }: LibraryProps) {
               <li><span>3</span><div><strong>Click again when finished</strong><small>This editor opens automatically with your recording.</small></div></li>
             </ol>
             <div className="shortcut-callout"><kbd>{navigator.userAgent.includes("Mac") ? "⌃" : "Alt"}</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>R</kbd><small>Keyboard shortcut</small></div>
-            <button className="primary-button button-wide" onClick={() => setShowGuide(false)}>Got it</button>
+            <button className="primary-button button-wide" onClick={() => setShowGuide(false)}>Got It</button>
           </section>
         </div>
       )}
@@ -160,7 +157,7 @@ export function Library({ onOpenProject }: LibraryProps) {
             <div className="danger-icon"><Icon name="trash" /></div>
             <h2 id="delete-title">Delete “{deleteCandidate.title}”?</h2>
             <p>The source recording and all edits will be removed from this device. This cannot be undone.</p>
-            <div className="modal-actions"><button className="button" onClick={() => setDeleteCandidate(null)}>Cancel</button><button className="danger-button filled" onClick={() => void removeProject()}>Delete project</button></div>
+            <div className="modal-actions"><button className="button" onClick={() => setDeleteCandidate(null)}>Cancel</button><button className="danger-button filled" onClick={() => void removeProject()}>Delete</button></div>
           </section>
         </div>
       )}
