@@ -6,6 +6,7 @@ import type {
   Project,
   ZoomSegment,
 } from "../shared/types";
+import { backgroundRemoved, resolveBackground } from "../shared/background";
 import { effectsAt } from "./effectsAdapter";
 import { clamp, lerp, smoothstep } from "./utils";
 
@@ -168,7 +169,8 @@ function frameRect(
   sourceHeight: number,
 ): Rect {
   const scale = width / 1280;
-  const padding = clamp(project.frame.padding * scale, 0, Math.min(width, height) * 0.4);
+  const inset = backgroundRemoved(project.frame) ? 0 : project.frame.padding;
+  const padding = clamp(inset * scale, 0, Math.min(width, height) * 0.4);
   const availableWidth = Math.max(1, width - padding * 2);
   const availableHeight = Math.max(1, height - padding * 2);
   const sourceRatio = Math.max(0.01, sourceWidth / Math.max(1, sourceHeight));
@@ -235,23 +237,20 @@ function fillBackground(
   context: CanvasRenderingContext2D,
   width: number,
   height: number,
-  background: string,
+  frame: Project["frame"],
 ) {
-  const presets: Record<string, [string, string, string?]> = {
-    aurora: ["#19152f", "#6948d9", "#23a9a1"],
-    midnight: ["#0a0b12", "#20243b"],
-    sunset: ["#351b45", "#d05762", "#e8a45e"],
-    ocean: ["#0c2537", "#176b87", "#35a6a0"],
-  };
-  const colors = presets[background];
-  if (colors) {
+  const paint = resolveBackground(frame);
+  if (paint.type === "gradient") {
     const gradient = context.createLinearGradient(0, 0, width, height);
-    gradient.addColorStop(0, colors[0]);
-    gradient.addColorStop(0.58, colors[1]);
-    gradient.addColorStop(1, colors[2] ?? colors[1]);
+    gradient.addColorStop(0, paint.colors[0]);
+    gradient.addColorStop(0.58, paint.colors[1]);
+    gradient.addColorStop(1, paint.colors[2]);
     context.fillStyle = gradient;
+  } else if (paint.type === "solid") {
+    context.fillStyle = paint.color;
   } else {
-    context.fillStyle = /^#[\da-f]{3,8}$/i.test(background) ? background : "#16171d";
+    // Background removed: only letterbox bars (forced aspect ratios) remain.
+    context.fillStyle = "#000000";
   }
   context.fillRect(0, 0, width, height);
 }
@@ -392,10 +391,13 @@ export function drawCompositedFrame(
     sourceWidth,
     sourceHeight,
   );
-  fillBackground(context, width, height, project.frame.background);
+  fillBackground(context, width, height, project.frame);
 
-  const radius = project.frame.cornerRadius * (width / 1280);
-  const shadow = clamp(project.frame.shadow, 0, 1) * 62 * (width / 1280);
+  const removed = backgroundRemoved(project.frame);
+  const radius = removed ? 0 : project.frame.cornerRadius * (width / 1280);
+  const shadow = removed
+    ? 0
+    : clamp(project.frame.shadow, 0, 1) * 62 * (width / 1280);
   context.save();
   if (shadow > 0) {
     context.shadowColor = "rgba(0,0,0,.52)";
