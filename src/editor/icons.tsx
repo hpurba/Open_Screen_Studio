@@ -15,14 +15,23 @@ export type IconName =
   | "pause"
   | "play"
   | "plus"
+  | "record"
   | "scissors"
+  | "search"
   | "settings"
+  | "share"
+  | "skip-back"
+  | "skip-forward"
   | "sparkles"
   | "trash"
   | "zoom-in";
 
 type IconProps = SVGProps<SVGSVGElement> & { name: IconName; size?: number };
 
+/**
+ * Icon set drawn to feel like SF Symbols: 1.5pt rounded strokes, filled
+ * playback glyphs, and compact 24pt geometry.
+ */
 export function Icon({ name, size = 18, ...props }: IconProps) {
   const common = {
     width: size,
@@ -30,7 +39,7 @@ export function Icon({ name, size = 18, ...props }: IconProps) {
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
-    strokeWidth: 1.8,
+    strokeWidth: 1.5,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
     "aria-hidden": true,
@@ -39,59 +48,105 @@ export function Icon({ name, size = 18, ...props }: IconProps) {
 
   switch (name) {
     case "arrow-left":
-      return <svg {...common}><path d="m15 18-6-6 6-6" /></svg>;
+      return <svg {...common} strokeWidth={2}><path d="m14.5 17.5-5.5-5.5 5.5-5.5" /></svg>;
     case "check":
-      return <svg {...common}><path d="m5 12 4 4L19 6" /></svg>;
+      return <svg {...common} strokeWidth={2}><path d="m5.5 12.5 4 4L18.5 7" /></svg>;
     case "chevron-down":
-      return <svg {...common}><path d="m6 9 6 6 6-6" /></svg>;
+      return <svg {...common} strokeWidth={2}><path d="m6.5 9.5 5.5 5.5 5.5-5.5" /></svg>;
     case "download":
-      return <svg {...common}><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>;
+      return <svg {...common}><path d="M12 4v11m0 0 4.25-4.25M12 15l-4.25-4.25" /><path d="M5 20h14" /></svg>;
     case "eye":
-      return <svg {...common}><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></svg>;
+      return <svg {...common}><path d="M2.75 12S6.25 5.75 12 5.75 21.25 12 21.25 12 17.75 18.25 12 18.25 2.75 12 2.75 12Z" /><circle cx="12" cy="12" r="2.6" /></svg>;
     case "eye-off":
-      return <svg {...common}><path d="m3 3 18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.5 5.3A10 10 0 0 1 12 5c6 0 9.5 7 9.5 7a16 16 0 0 1-2 2.8M6.2 6.2C3.8 7.8 2.5 12 2.5 12s3.5 7 9.5 7a10 10 0 0 0 3.2-.5" /></svg>;
+      return <svg {...common}><path d="m4 4 16 16M10.4 10.5a2.6 2.6 0 0 0 3.55 3.55M8.7 6.4A9.4 9.4 0 0 1 12 5.75c5.75 0 9.25 6.25 9.25 6.25a17 17 0 0 1-2.53 3.28M5.7 7.6A16.4 16.4 0 0 0 2.75 12S6.25 18.25 12 18.25c1.2 0 2.3-.27 3.3-.7" /></svg>;
     case "film":
-      return <svg {...common}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 4v16M17 4v16M3 9h4m10 0h4M3 15h4m10 0h4" /></svg>;
+      return <svg {...common}><rect x="3.25" y="4.75" width="17.5" height="14.5" rx="2.5" /><path d="M7.5 4.75v14.5m9-14.5v14.5M3.25 9.5h4.25m9 0h4.25M3.25 14.5h4.25m9 0h4.25" /></svg>;
     case "frame":
-      return <svg {...common}><path d="M4 9V5a1 1 0 0 1 1-1h4m6 0h4a1 1 0 0 1 1 1v4m0 6v4a1 1 0 0 1-1 1h-4m-6 0H5a1 1 0 0 1-1-1v-4" /></svg>;
+      return <svg {...common}><path d="M4.5 8.5v-3a1 1 0 0 1 1-1h3m7 0h3a1 1 0 0 1 1 1v3m0 7v3a1 1 0 0 1-1 1h-3m-7 0h-3a1 1 0 0 1-1-1v-3" /></svg>;
     case "folder":
-      return <svg {...common}><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /></svg>;
+      return <svg {...common}><path d="M3.5 7.25A1.75 1.75 0 0 1 5.25 5.5h4.4l1.85 1.9h7.25a1.75 1.75 0 0 1 1.75 1.75v7.6a1.75 1.75 0 0 1-1.75 1.75H5.25A1.75 1.75 0 0 1 3.5 16.75v-9.5Z" /></svg>;
     case "info":
-      return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-8h.01" /></svg>;
+      return <svg {...common}><circle cx="12" cy="12" r="8.75" /><path d="M12 11.25V16m0-7.9h.01" strokeWidth={1.8} /></svg>;
     case "mouse":
-      return <svg {...common}><path d="m5 3 13 8-6 2-3 6L5 3Z" /></svg>;
+      return (
+        <svg {...common} fill="currentColor" stroke="none">
+          <path d="M7.2 3.2a.85.85 0 0 1 1.37-.67l10.3 8.15a.85.85 0 0 1-.4 1.51l-4.47.72 2.4 4.79a.85.85 0 0 1-.38 1.14l-1.5.75a.85.85 0 0 1-1.14-.38l-2.4-4.78-3.32 3.07a.85.85 0 0 1-1.43-.57L7.2 3.2Z" />
+        </svg>
+      );
     case "pause":
-      return <svg {...common}><path d="M9 5v14M15 5v14" /></svg>;
+      return (
+        <svg {...common} fill="currentColor" stroke="none">
+          <rect x="6.5" y="4.5" width="4" height="15" rx="1.1" />
+          <rect x="13.5" y="4.5" width="4" height="15" rx="1.1" />
+        </svg>
+      );
     case "play":
-      return <svg {...common}><path d="m8 5 11 7-11 7V5Z" /></svg>;
+      return (
+        <svg {...common} fill="currentColor" stroke="none">
+          <path d="M7.5 5.06c0-.93 1-1.51 1.8-1.05l11.16 6.44a1.21 1.21 0 0 1 0 2.1L9.3 19.99c-.8.46-1.8-.12-1.8-1.05V5.06Z" />
+        </svg>
+      );
     case "plus":
-      return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
+      return <svg {...common} strokeWidth={1.8}><path d="M12 5.25v13.5M5.25 12h13.5" /></svg>;
+    case "record":
+      return (
+        <svg {...common} stroke="none" fill="currentColor">
+          <circle cx="12" cy="12" r="6.5" />
+        </svg>
+      );
     case "scissors":
-      return <svg {...common}><circle cx="6" cy="7" r="3" /><circle cx="6" cy="17" r="3" /><path d="m8.7 8.3 11.3 7.2M8.7 15.7 20 8.5" /></svg>;
+      return <svg {...common}><circle cx="6.25" cy="7" r="2.75" /><circle cx="6.25" cy="17" r="2.75" /><path d="m8.75 8.4 11 7.1M8.75 15.6 19.75 8.5" /></svg>;
+    case "search":
+      return <svg {...common} strokeWidth={1.7}><circle cx="10.75" cy="10.75" r="6.5" /><path d="m15.75 15.75 4.5 4.5" /></svg>;
     case "settings":
-      return <svg {...common}><path d="M4 7h10M18 7h2M4 17h2m4 0h10M14 4v6M6 14v6" /></svg>;
+      return <svg {...common}><path d="M4 7.25h9.5m4 0H20M4 16.75h3m4 0h9M13.5 4.5v5.5m-6.5 4v5.5" /></svg>;
+    case "share":
+      return <svg {...common}><path d="M12 3.25v11" /><path d="m8.25 6.5 3.75-3.5 3.75 3.5" /><path d="M7.75 10.5H6.25A1.75 1.75 0 0 0 4.5 12.25v6.5a1.75 1.75 0 0 0 1.75 1.75h11.5a1.75 1.75 0 0 0 1.75-1.75v-6.5a1.75 1.75 0 0 0-1.75-1.75h-1.5" /></svg>;
+    case "skip-back":
+      return (
+        <svg {...common} fill="currentColor" stroke="none">
+          <path d="M11.8 6.1c0-.87-.97-1.4-1.7-.92l-6 3.9a1.1 1.1 0 0 0 0 1.84l6 3.9c.73.48 1.7-.05 1.7-.92V6.1Z" transform="translate(1.1 2)" />
+          <path d="M20.4 6.1c0-.87-.97-1.4-1.7-.92l-6 3.9a1.1 1.1 0 0 0 0 1.84l6 3.9c.73.48 1.7-.05 1.7-.92V6.1Z" transform="translate(1.1 2)" />
+        </svg>
+      );
+    case "skip-forward":
+      return (
+        <svg {...common} fill="currentColor" stroke="none">
+          <path d="M3.6 6.1c0-.87.97-1.4 1.7-.92l6 3.9a1.1 1.1 0 0 1 0 1.84l-6 3.9c-.73.48-1.7-.05-1.7-.92V6.1Z" transform="translate(-1.1 2)" />
+          <path d="M12.2 6.1c0-.87.97-1.4 1.7-.92l6 3.9a1.1 1.1 0 0 1 0 1.84l-6 3.9c-.73.48-1.7-.05-1.7-.92V6.1Z" transform="translate(-1.1 2)" />
+        </svg>
+      );
     case "sparkles":
-      return <svg {...common}><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3ZM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Zm13-1 1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2Z" /></svg>;
+      return <svg {...common} strokeWidth={1.4}><path d="m12 3.5 1.15 3.6 3.6 1.15-3.6 1.15L12 13l-1.15-3.6-3.6-1.15 3.6-1.15L12 3.5ZM5.25 14.25l.75 2 2 .75-2 .75-.75 2-.75-2-2-.75 2-.75.75-2Zm12.5-.75.9 1.85 1.85.9-1.85.9-.9 1.85-.9-1.85-1.85-.9 1.85-.9.9-1.85Z" /></svg>;
     case "trash":
-      return <svg {...common}><path d="M4 7h16M9 3h6l1 4H8l1-4Zm-2 4 1 14h8l1-14M10 11v6m4-6v6" /></svg>;
+      return <svg {...common}><path d="M4.75 6.75h14.5M9.5 3.75h5a1 1 0 0 1 1 .95l.1 2.05h-7.2l.1-2.05a1 1 0 0 1 1-.95ZM6.4 6.75l.75 12.05a1.6 1.6 0 0 0 1.6 1.5h6.5a1.6 1.6 0 0 0 1.6-1.5l.75-12.05M10.1 10.5v6.3m3.8-6.3v6.3" /></svg>;
     case "zoom-in":
-      return <svg {...common}><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5M10.5 7.5v6m-3-3h6" /></svg>;
+      return <svg {...common} strokeWidth={1.7}><circle cx="10.75" cy="10.75" r="6.5" /><path d="m15.75 15.75 4.5 4.5M10.75 8v5.5M8 10.75h5.5" /></svg>;
   }
 }
 
+/**
+ * App mark styled like a modern macOS pro-app tile: dark rounded square with
+ * a luminous capture glyph.
+ */
 export function BrandMark({ size = 30 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
       <defs>
-        <linearGradient id="oss-brand" x1="4" y1="3" x2="27" y2="29" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#a88bff" />
-          <stop offset="1" stopColor="#6c4df7" />
+        <linearGradient id="oss-tile" x1="16" y1="0" x2="16" y2="32" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#3a3a3f" />
+          <stop offset="1" stopColor="#1c1c20" />
+        </linearGradient>
+        <linearGradient id="oss-lens" x1="8" y1="8" x2="24" y2="26" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#64b5ff" />
+          <stop offset="1" stopColor="#0a63d8" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill="url(#oss-brand)" />
-      <rect x="7" y="8" width="18" height="13" rx="3" fill="white" fillOpacity=".95" />
-      <path d="M12 25h8M16 21v4" stroke="white" strokeWidth="2" strokeLinecap="round" />
-      <path d="m12 11 8 4-3.6 1.1-1.5 3.4L12 11Z" fill="#6c4df7" />
+      <rect width="32" height="32" rx="7.5" fill="url(#oss-tile)" />
+      <rect x="0.5" y="0.5" width="31" height="31" rx="7" fill="none" stroke="rgba(255,255,255,.14)" />
+      <rect x="6" y="8.5" width="20" height="13.5" rx="3" fill="none" stroke="url(#oss-lens)" strokeWidth="2" />
+      <path d="m13.4 12.2 6.4 3.1-2.85.9-1.2 2.75-2.35-6.75Z" fill="#eaf4ff" />
+      <path d="M12 25.5h8" stroke="url(#oss-lens)" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }

@@ -44,8 +44,12 @@ export function Timeline({
     [project.events],
   );
   const ticks = useMemo(() => {
-    const count = 8;
-    return Array.from({ length: count + 1 }, (_, index) => (duration * index) / count);
+    // Round intervals (1s, 2s, 5s, 10s…) so ruler labels read like FCP timecode.
+    const intervals = [1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000];
+    const interval = intervals.find((step) => duration / step <= 12) ?? 600000;
+    const result: number[] = [];
+    for (let tick = 0; tick <= duration; tick += interval) result.push(tick);
+    return result;
   }, [duration]);
 
   useEffect(() => {

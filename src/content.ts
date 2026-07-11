@@ -491,24 +491,51 @@ class ContentCaptureRuntime {
           .backdrop {
             position: fixed; inset: 0; z-index: 2147483647;
             display: grid; place-items: center; pointer-events: none;
-            background: rgba(4, 7, 18, .16);
+            background: rgba(8, 8, 12, .18);
+          }
+          /* macOS-style HUD: dark translucent rounded square */
+          .hud {
+            display: grid; place-items: center; gap: 2px;
+            width: 148px; height: 148px;
+            border: 0.5px solid rgba(255,255,255,.16); border-radius: 28px;
+            background: rgba(28, 28, 32, .74);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            backdrop-filter: blur(28px) saturate(1.4);
+            box-shadow: 0 22px 70px rgba(0,0,0,.45), inset 0 1px rgba(255,255,255,.08);
           }
           .count {
-            display: grid; place-items: center; width: 112px; height: 112px;
-            border: 2px solid rgba(255,255,255,.82); border-radius: 999px;
-            color: white; background: rgba(10, 13, 26, .84);
-            box-shadow: 0 18px 70px rgba(0,0,0,.38);
-            font: 700 52px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            text-shadow: 0 2px 12px rgba(0,0,0,.35);
+            color: rgba(255,255,255,.96);
+            font: 200 68px/1 -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 2px 14px rgba(0,0,0,.3);
+          }
+          .count.tick { animation: hud-tick 700ms cubic-bezier(.2,.7,.3,1); }
+          .caption {
+            color: rgba(255,255,255,.55);
+            font: 500 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+            letter-spacing: .06em; text-transform: uppercase;
+          }
+          @keyframes hud-tick {
+            0% { transform: scale(1.22); opacity: .2; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .count.tick { animation: none; }
           }
         </style>
-        <div class="backdrop"><div class="count"></div></div>
+        <div class="backdrop"><div class="hud"><div class="count"></div><div class="caption">Recording</div></div></div>
       `;
       document.documentElement.append(host);
       this.countdownHost = host;
     }
     const count = host.shadowRoot?.querySelector<HTMLElement>(".count");
-    if (count) count.textContent = String(value);
+    if (count) {
+      count.textContent = String(value);
+      // Restart the tick animation for each new digit.
+      count.classList.remove("tick");
+      void count.offsetHeight;
+      count.classList.add("tick");
+    }
   }
 
   private removeCountdown(): void {

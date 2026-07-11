@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import type { Project } from "../shared/types";
 import type { EditorSelection } from "./editorTypes";
 import { Icon, type IconName } from "./icons";
@@ -21,11 +21,11 @@ const tabs: { id: Tab; label: string; icon: IconName }[] = [
   { id: "camera", label: "Camera", icon: "zoom-in" },
   { id: "frame", label: "Frame", icon: "frame" },
   { id: "trim", label: "Trim", icon: "scissors" },
-  { id: "export", label: "Export", icon: "download" },
+  { id: "export", label: "Export", icon: "share" },
 ];
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="inspector-section"><h3>{title}</h3>{children}</section>;
+function Section({ title, className, children }: { title: string; className?: string; children: ReactNode }) {
+  return <section className={`inspector-section${className ? ` ${className}` : ""}`}><h3>{title}</h3>{children}</section>;
 }
 
 type SliderProps = {
@@ -39,17 +39,21 @@ type SliderProps = {
 };
 
 function SliderField({ label, value, min, max, step, onChange, display }: SliderProps) {
+  const safe = clamp(value, min, max);
+  const percent = max > min ? ((safe - min) / (max - min)) * 100 : 0;
   return (
     <label className="control-field slider-field">
-      <span className="control-label"><span>{label}</span><output>{display ?? value}</output></span>
+      <span className="field-name">{label}</span>
       <input
         type="range"
         min={min}
         max={max}
         step={step}
-        value={clamp(value, min, max)}
+        value={safe}
+        style={{ "--p": `${percent}%` } as CSSProperties}
         onChange={(event) => onChange(Number(event.target.value))}
       />
+      <output>{display ?? value}</output>
     </label>
   );
 }
@@ -85,10 +89,14 @@ function Segmented<T extends string | number>({
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
 }) {
+  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value));
   return (
     <fieldset className="segmented-field">
       <legend>{label}</legend>
-      <div className="segmented-control">
+      <div
+        className="segmented-control"
+        style={{ "--seg-count": options.length, "--seg-index": activeIndex } as CSSProperties}
+      >
         {options.map((option) => (
           <button
             type="button"
@@ -195,7 +203,7 @@ export function Inspector({
 
       <div className="inspector-scroll">
         {(selectedZoom || selectedHidden) && (
-          <Section title={selectedZoom ? "Selected zoom" : "Hidden cursor range"}>
+          <Section title={selectedZoom ? "Selected zoom" : "Hidden cursor range"} className="selection-section">
             {selectedZoom && (
               <>
                 <div className="selection-heading">
@@ -240,6 +248,7 @@ export function Inspector({
           </Section>
         )}
 
+        <div className="tab-panel" key={tab}>
         {tab === "cursor" && (
           <>
             <div className="inspector-heading"><span className="heading-icon"><Icon name="mouse" /></span><div><h2>Cursor</h2><p>Polish pointer movement and visibility.</p></div></div>
@@ -317,7 +326,7 @@ export function Inspector({
 
         {tab === "export" && (
           <>
-            <div className="inspector-heading"><span className="heading-icon"><Icon name="download" /></span><div><h2>Export</h2><p>Download a WebM or compatible MP4.</p></div></div>
+            <div className="inspector-heading"><span className="heading-icon"><Icon name="share" /></span><div><h2>Export</h2><p>Download a WebM or compatible MP4.</p></div></div>
             <Section title="Video">
               <Segmented label="Format" value={project.export.format ?? "webm"} options={[{ value: "webm", label: "WebM" }, { value: "mp4", label: "MP4" }]} onChange={(format) => updateNested("export", { format })} />
               <Segmented label="Long edge" value={project.export.width} options={[{ value: 1280, label: "1280" }, { value: 1920, label: "1920" }]} onChange={(width) => updateNested("export", { width })} />
@@ -325,11 +334,12 @@ export function Inspector({
               <Segmented label="Quality" value={project.export.quality} options={[{ value: "standard", label: "Standard" }, { value: "high", label: "High" }]} onChange={(quality) => updateNested("export", { quality })} />
               <div className="export-summary"><span>{(project.export.format ?? "webm").toUpperCase()} · {dimensions.width} × {dimensions.height}</span><span>{formatDuration(project.trimEnd - project.trimStart)} · {project.export.format === "mp4" ? "Render + local H.264 conversion" : "Real-time render"}</span></div>
               {project.export.format === "mp4" && <p className="section-copy compact export-format-note">MP4 is broadly compatible, but its offline conversion takes longer and uses more memory. WebM is the fastest option.</p>}
-              <button className="primary-button export-panel-button" onClick={onExport}><Icon name="download" size={16} /> Export {(project.export.format ?? "webm").toUpperCase()}</button>
+              <button className="primary-button export-panel-button" onClick={onExport}><Icon name="share" size={15} /> Export {(project.export.format ?? "webm").toUpperCase()}</button>
             </Section>
             <div className="privacy-note"><Icon name="check" size={15} /><span>Rendered on this device. Nothing is uploaded.</span></div>
           </>
         )}
+        </div>
       </div>
     </aside>
   );

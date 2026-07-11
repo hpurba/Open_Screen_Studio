@@ -11,7 +11,7 @@ import { projectStore } from "./storageAdapter";
 import { Timeline } from "./Timeline";
 import { Transport } from "./Transport";
 import { useAutosave } from "./useAutosave";
-import { clamp, safeHost } from "./utils";
+import { clamp, formatDuration, safeHost } from "./utils";
 
 const projectIdFromLocation = () => {
   const hashMatch = window.location.hash.match(/^#\/project\/([^/?]+)/);
@@ -172,21 +172,27 @@ function EditorWorkspace({
     <div className="editor-page">
       <header className="editor-header">
         <div className="editor-header-left">
-          <button className="icon-button back-button" onClick={onBack} aria-label="Back to project library"><Icon name="arrow-left" size={20} /></button>
-          <BrandMark size={29} />
+          <button className="icon-button back-button" onClick={onBack} aria-label="Back to project library"><Icon name="arrow-left" size={19} /></button>
+          <BrandMark size={26} />
           <span className="header-divider" />
           <div className="title-stack">
             <input className="project-title-input" value={project.title} onChange={(event) => setProject((current) => ({ ...current, title: event.target.value }))} aria-label="Project title" />
             <span>{safeHost(project.sourceUrl)}</span>
           </div>
         </div>
+        <div className="dashboard" aria-label="Playback position">
+          <span className="dashboard-time">{formatDuration(time, true)}</span>
+          <span className="dashboard-total">/ {formatDuration(project.trimEnd - project.trimStart)}</span>
+        </div>
         <div className="editor-header-right">
           <span className={`save-indicator ${saveState}`} aria-live="polite">
-            {saveState === "saving" ? <span className="mini-spinner" /> : <Icon name={saveState === "error" ? "info" : "check"} size={14} />}
-            {saveState === "saving" ? "Saving" : saveState === "error" ? "Save failed" : "Saved locally"}
+            <span className="state-swap" key={saveState}>
+              {saveState === "saving" ? <span className="mini-spinner" /> : <Icon name={saveState === "error" ? "info" : "check"} size={13} />}
+              {saveState === "saving" ? "Saving" : saveState === "error" ? "Save failed" : "Saved"}
+            </span>
           </span>
           <button className="primary-button header-export" onClick={() => void beginExport()} disabled={exportState.status === "running"}>
-            <Icon name="download" size={16} /> Export
+            <Icon name="share" size={15} /> Export
           </button>
         </div>
       </header>
