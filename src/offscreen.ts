@@ -1,3 +1,8 @@
+import {
+  containRect,
+  remapToCanvas,
+  type CanvasContentRect
+} from "./shared/capture";
 import { generateAutoZooms } from "./shared/effects";
 import { createProject } from "./shared/project";
 import {
@@ -38,6 +43,7 @@ type RecordingState = {
   canvasTrack?: CanvasCaptureMediaStreamTrack;
   framePump?: number;
   hasScreencastFrame: boolean;
+  contentRect?: CanvasContentRect;
   mimeType: string;
   startedAt: number;
   width: number;
@@ -269,19 +275,11 @@ async function drawScreencastFrame(
     state.context.setTransform(1, 0, 0, 1, 0, 0);
     state.context.fillStyle = "#000";
     state.context.fillRect(0, 0, state.width, state.height);
-    const scale = Math.min(
-      state.width / bitmap.width,
-      state.height / bitmap.height
-    );
-    const drawWidth = bitmap.width * scale;
-    const drawHeight = bitmap.height * scale;
-    state.context.drawImage(
-      bitmap,
-      (state.width - drawWidth) / 2,
-      (state.height - drawHeight) / 2,
-      drawWidth,
-      drawHeight
-    );
+    // Frames from a differently sized tab (after a mid-recording tab switch)
+    // are letterboxed; the rect is kept so telemetry can be remapped onto it.
+    const rect = containRect(state.width, state.height, bitmap.width, bitmap.height);
+    state.contentRect = rect;
+    state.context.drawImage(bitmap, rect.x, rect.y, rect.width, rect.height);
     state.hasScreencastFrame = true;
     return { ok: true, width: state.width, height: state.height };
   } catch (error) {
@@ -346,17 +344,10 @@ async function primeRecording(
     state = recordingState;
     activeRecording = recordingState;
 
-    for (const track of audioTracks) {
-      track.addEventListener(
-        "ended",
-        () => {
-          if (!recordingState.stopping && recordingState.startedAt > 0) {
-            void finalizeRecording(recordingState, "track-ended", true);
-          }
-        },
-        { once: true }
-      );
-    }
+    // The audio track ending (its source tab closed or muted) no longer stops
+    // the recording: the capture may have followed the user to another tab.
+    // Closing the tab that is currently being recorded is handled by the
+    // service worker via tabs.onRemoved.
 
     await replayTabAudio(recordingState);
     if (audioTracks.every((track) => track.readyState === "ended")) {
@@ -458,7 +449,15 @@ function appendEvents(sessionId: string, values: unknown[]): FailureResult | { o
 
   for (const value of values.slice(0, 2_000)) {
     const event = normalizeEvent(value);
-    if (event) state.events.push(event);
+    if (!event) continue;
+    if (event.type === "pointer" || event.type === "click") {
+      // Page coordinates are normalized to the tab viewport; project them onto
+      // the recorder canvas so the cursor stays aligned after letterboxing.
+      const mapped = remapToCanvas(event, state.contentRect);
+      state.events.push({ ...event, x: mapped.x, y: mapped.y });
+    } else {
+      state.events.push(event);
+    }
   }
   return { ok: true };
 }
