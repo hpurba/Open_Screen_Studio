@@ -8,6 +8,7 @@ import {
 type ContentCommand =
   | { type: "CONTENT_PREPARE"; sessionId: string; countdownSeconds?: number }
   | { type: "CONTENT_START"; sessionId: string; startedAt: number }
+  | { type: "CONTENT_RESUME"; sessionId: string; startedAt: number }
   | { type: "CONTENT_FLUSH"; sessionId: string }
   | { type: "CONTENT_STOP"; sessionId: string }
   | { type: "CONTENT_CANCEL"; sessionId: string };
@@ -33,6 +34,7 @@ function isCommand(value: unknown): value is ContentCommand {
   return [
     "CONTENT_PREPARE",
     "CONTENT_START",
+    "CONTENT_RESUME",
     "CONTENT_FLUSH",
     "CONTENT_STOP",
     "CONTENT_CANCEL"
@@ -121,6 +123,8 @@ class ContentCaptureRuntime {
         );
       case "CONTENT_START":
         return this.start(command.sessionId, command.startedAt);
+      case "CONTENT_RESUME":
+        return this.resume(command.sessionId, command.startedAt);
       case "CONTENT_FLUSH":
         await this.flushTelemetry(command.sessionId);
         return { ok: true };
@@ -203,6 +207,22 @@ class ContentCaptureRuntime {
     this.sessionId = sessionId;
     this.prepared = true;
     await this.start(sessionId, startedAt);
+  }
+
+  /**
+   * Join a recording that is already running — used when the capture follows
+   * the user into this tab, or re-arms a page after an in-place navigation.
+   */
+  private async resume(
+    sessionId: string,
+    startedAt: number
+  ): Promise<Record<string, unknown>> {
+    if (!Number.isFinite(startedAt)) {
+      return { ok: false, error: "The recorder supplied an invalid start time." };
+    }
+    if (this.recording && this.sessionId === sessionId) return { ok: true };
+    await this.resumeCapture(sessionId, startedAt);
+    return { ok: true };
   }
 
   private async stop(sessionId: string): Promise<void> {
