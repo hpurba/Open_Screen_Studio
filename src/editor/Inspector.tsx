@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { activeGradientColors } from "../shared/background";
 import type { Project } from "../shared/types";
 import type { EditorSelection } from "./editorTypes";
 import { Icon, type IconName } from "./icons";
@@ -36,13 +37,14 @@ type SliderProps = {
   step: number;
   onChange: (value: number) => void;
   display?: string;
+  disabled?: boolean;
 };
 
-function SliderField({ label, value, min, max, step, onChange, display }: SliderProps) {
+function SliderField({ label, value, min, max, step, onChange, display, disabled }: SliderProps) {
   const safe = clamp(value, min, max);
   const percent = max > min ? ((safe - min) / (max - min)) * 100 : 0;
   return (
-    <label className="control-field slider-field">
+    <label className={`control-field slider-field${disabled ? " disabled" : ""}`}>
       <span className="field-name">{label}</span>
       <input
         type="range"
@@ -50,6 +52,7 @@ function SliderField({ label, value, min, max, step, onChange, display }: Slider
         max={max}
         step={step}
         value={safe}
+        disabled={disabled}
         style={{ "--p": `${percent}%` } as CSSProperties}
         onChange={(event) => onChange(Number(event.target.value))}
       />
@@ -288,6 +291,13 @@ export function Inspector({
             <Section title="Canvas">
               <Segmented label="Aspect ratio" value={project.frame.aspectRatio} options={[{ value: "source", label: "Source" }, { value: "16:9", label: "16:9" }, { value: "9:16", label: "9:16" }, { value: "1:1", label: "1:1" }]} onChange={(aspectRatio) => updateNested("frame", { aspectRatio })} />
               <div className="background-grid" aria-label="Background">
+                <button
+                  className={`background-swatch bg-none${project.frame.background === "none" ? " active" : ""}`}
+                  onClick={() => updateNested("frame", { background: "none" })}
+                  aria-label="Remove background"
+                  aria-pressed={project.frame.background === "none"}
+                  title="No background — the recording fills the canvas"
+                ><span /></button>
                 {["aurora", "midnight", "sunset", "ocean", "#18191f", "#f2f0eb"].map((background) => (
                   <button
                     key={background}
@@ -303,11 +313,36 @@ export function Inspector({
                   <span>+</span>
                 </label>
               </div>
+              {project.frame.background !== "none" && (
+                <div className="gradient-editor">
+                  <span className="field-name">Gradient colors</span>
+                  <div className="gradient-stops" aria-label="Gradient colors">
+                    {activeGradientColors(project.frame).map((color, index) => (
+                      <label
+                        key={index}
+                        style={{ background: color }}
+                        title={`Gradient stop ${index + 1}`}
+                      >
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(event) => {
+                            const next = activeGradientColors(project.frame);
+                            next[index] = event.target.value;
+                            updateNested("frame", { background: "gradient", gradientColors: next });
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Section>
             <Section title="Recording card">
-              <SliderField label="Padding" min={0} max={180} step={2} value={project.frame.padding} display={`${project.frame.padding}px`} onChange={(padding) => updateNested("frame", { padding })} />
-              <SliderField label="Corner radius" min={0} max={48} step={1} value={project.frame.cornerRadius} display={`${project.frame.cornerRadius}px`} onChange={(cornerRadius) => updateNested("frame", { cornerRadius })} />
-              <SliderField label="Shadow" min={0} max={1} step={0.01} value={project.frame.shadow} display={`${Math.round(project.frame.shadow * 100)}%`} onChange={(shadow) => updateNested("frame", { shadow })} />
+              <SliderField label="Padding" min={0} max={180} step={2} value={project.frame.padding} display={`${project.frame.padding}px`} disabled={project.frame.background === "none"} onChange={(padding) => updateNested("frame", { padding })} />
+              <SliderField label="Corner radius" min={0} max={48} step={1} value={project.frame.cornerRadius} display={`${project.frame.cornerRadius}px`} disabled={project.frame.background === "none"} onChange={(cornerRadius) => updateNested("frame", { cornerRadius })} />
+              <SliderField label="Shadow" min={0} max={1} step={0.01} value={project.frame.shadow} display={`${Math.round(project.frame.shadow * 100)}%`} disabled={project.frame.background === "none"} onChange={(shadow) => updateNested("frame", { shadow })} />
+              {project.frame.background === "none" && <p className="section-copy compact">Background removed — the recording fills the canvas edge to edge.</p>}
             </Section>
           </>
         )}

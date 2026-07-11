@@ -35,6 +35,16 @@ describe("frame composition", () => {
     expect(center).toEqual({ x: 0.5, y: 0.5 });
   });
 
+  it("lets the recording bleed edge to edge when the background is removed", () => {
+    const removed = {
+      ...project,
+      frame: { ...project.frame, background: "none" },
+    };
+
+    const composition = getFrameComposition(removed, 0, 1280, 720);
+    expect(composition.frame).toEqual({ x: 0, y: 0, width: 1280, height: 720 });
+  });
+
   it("removes the synthetic cursor throughout a hidden timeline range", () => {
     const hidden = {
       ...project,

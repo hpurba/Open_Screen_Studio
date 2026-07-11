@@ -1,3 +1,4 @@
+import { DEFAULT_GRADIENT, sanitizeGradientColors } from "./background";
 import type {
   CameraSettings,
   CaptureEvent,
@@ -31,6 +32,7 @@ export const DEFAULT_FRAME_SETTINGS: FrameSettings = {
   cornerRadius: 18,
   shadow: 0.55,
   background: "aurora",
+  gradientColors: [...DEFAULT_GRADIENT],
 };
 
 export const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
@@ -100,7 +102,11 @@ export function normalizeProject(value: Project): Project {
     ),
     cursor: { ...DEFAULT_CURSOR_SETTINGS, ...value.cursor },
     camera: { ...DEFAULT_CAMERA_SETTINGS, ...value.camera },
-    frame: { ...DEFAULT_FRAME_SETTINGS, ...value.frame },
+    frame: {
+      ...DEFAULT_FRAME_SETTINGS,
+      ...value.frame,
+      gradientColors: sanitizeGradientColors(value.frame?.gradientColors),
+    },
     export: { ...DEFAULT_EXPORT_SETTINGS, ...value.export },
   };
 }
