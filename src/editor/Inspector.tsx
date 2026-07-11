@@ -24,8 +24,8 @@ const tabs: { id: Tab; label: string; icon: IconName }[] = [
   { id: "export", label: "Export", icon: "share" },
 ];
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="inspector-section"><h3>{title}</h3>{children}</section>;
+function Section({ title, className, children }: { title: string; className?: string; children: ReactNode }) {
+  return <section className={`inspector-section${className ? ` ${className}` : ""}`}><h3>{title}</h3>{children}</section>;
 }
 
 type SliderProps = {
@@ -199,7 +199,7 @@ export function Inspector({
 
       <div className="inspector-scroll">
         {(selectedZoom || selectedHidden) && (
-          <Section title={selectedZoom ? "Selected zoom" : "Hidden cursor range"}>
+          <Section title={selectedZoom ? "Selected zoom" : "Hidden cursor range"} className="selection-section">
             {selectedZoom && (
               <>
                 <div className="selection-heading">
