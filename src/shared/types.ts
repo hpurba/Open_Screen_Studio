@@ -84,7 +84,10 @@ export type FrameSettings = {
   padding: number;
   cornerRadius: number;
   shadow: number;
+  /** Preset name, "gradient" for custom stops, a hex color, or "none". */
   background: string;
+  /** Custom stops used when background is "gradient". */
+  gradientColors: [string, string, string];
 };
 
 export type ExportSettings = {
