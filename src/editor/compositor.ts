@@ -310,36 +310,30 @@ function drawCursor(
     context.moveTo(0, -size * 0.48);
     context.lineTo(0, size * 0.48);
     context.stroke();
-  } else if (kind === "pointer") {
-    context.fillStyle = "white";
-    context.strokeStyle = "#151515";
-    context.lineWidth = Math.max(1.5, size * 0.055);
-    context.beginPath();
-    context.roundRect(-size * 0.18, -size * 0.45, size * 0.38, size * 0.76, size * 0.15);
-    context.fill();
-    context.stroke();
-    context.beginPath();
-    context.moveTo(-size * 0.18, -size * 0.1);
-    context.lineTo(-size * 0.36, -size * 0.02);
-    context.lineTo(-size * 0.22, size * 0.1);
-    context.closePath();
-    context.fill();
-    context.stroke();
   } else {
-    context.fillStyle = "white";
-    context.strokeStyle = "#151515";
-    context.lineWidth = Math.max(1.5, size * 0.065);
+    // "pointer" (hover) intentionally falls through to the normal arrow:
+    // swapping glyphs mid-hover looked wrong in recordings, so hovering
+    // keeps the standard pointer shape. The arrow itself is traced from
+    // the real macOS system cursor (black body, white rim, vertical left
+    // edge) with its tip sitting exactly on the recorded hotspot.
+    const s = size / 15;
     context.beginPath();
-    context.moveTo(-size * 0.22, -size * 0.48);
-    context.lineTo(size * 0.32, size * 0.16);
-    context.lineTo(size * 0.04, size * 0.17);
-    context.lineTo(size * 0.2, size * 0.48);
-    context.lineTo(size * 0.02, size * 0.56);
-    context.lineTo(-size * 0.14, size * 0.23);
-    context.lineTo(-size * 0.35, size * 0.42);
+    context.moveTo(0, 0);
+    context.lineTo(0, s * 11.19);
+    context.lineTo(s * 2.53, s * 8.75);
+    context.lineTo(s * 5.83, s * 14.19);
+    context.lineTo(s * 7.59, s * 13.25);
+    context.lineTo(s * 4.82, s * 8.04);
+    context.lineTo(s * 8.42, s * 8.04);
     context.closePath();
-    context.fill();
+    context.lineJoin = "miter";
+    context.miterLimit = 4;
+    context.strokeStyle = "white";
+    context.lineWidth = Math.max(1.25, s * 1.4);
     context.stroke();
+    context.shadowColor = "transparent";
+    context.fillStyle = "black";
+    context.fill();
   }
   context.restore();
 }
