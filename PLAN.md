@@ -81,7 +81,7 @@ Acceptance:
 - [x] Test the production build in an unpacked Chrome extension.
 - [x] Verify start/stop, pointer capture, auto zoom, manual zoom, follow, cursor hiding, project reopen, and export.
 - [x] Review permission copy, error states, empty states, and the README startup path.
-- [ ] Open a GitHub PR with the complete diff, merge it into `main`, and verify the merged branch.
+- [x] Open a GitHub PR with the complete diff, merge it into `main`, and verify the merged branch.
 
 ## Definition of done
 
