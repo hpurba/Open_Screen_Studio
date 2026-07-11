@@ -56,7 +56,7 @@ export function resolveBackground(
     return { type: "gradient", colors: sanitizeGradientColors(frame.gradientColors) };
   }
   const preset = BACKGROUND_PRESETS[frame.background];
-  if (preset) return { type: "gradient", colors: preset };
+  if (preset) return { type: "gradient", colors: [...preset] };
   const solid = normalizeHex(frame.background);
   return { type: "solid", color: solid ?? "#16171d" };
 }

@@ -683,10 +683,11 @@ input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border: 0; bo
 .target-coordinates { margin: 8px 0 12px; color: var(--text-3); font-size: 10px; text-align: center; font-variant-numeric: tabular-nums; }
 .inspector-section .danger-button { width: 100%; min-height: 26px; font-size: 10.5px; }
 
-.background-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 2px; }
+.background-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-top: 2px; }
 .background-swatch, .color-picker { aspect-ratio: 1; position: relative; display: grid; place-items: center; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 5px; cursor: pointer; transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
 .background-swatch:hover { border-color: rgba(255, 255, 255, 0.3); }
 .background-swatch.active { border-color: var(--blue); box-shadow: 0 0 0 2.5px rgba(10, 132, 255, 0.35); }
+.bg-none { background: linear-gradient(135deg, transparent 45%, #e5484d 45%, #e5484d 55%, transparent 55%), #ececf1; }
 .bg-aurora { background: linear-gradient(135deg, #16203a, #2f5db2 58%, #35a09a); }
 .bg-midnight { background: linear-gradient(135deg, #0a0b12, #303450); }
 .bg-sunset { background: linear-gradient(135deg, #351b45, #d05762 60%, #e8a45e); }
@@ -695,6 +696,13 @@ input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border: 0; bo
 .color-picker::before { content: ""; position: absolute; inset: 3px; border-radius: 3px; background: #242428; }
 .color-picker input { position: absolute; opacity: 0; }
 .color-picker span { z-index: 1; }
+.gradient-editor { margin-top: 10px; }
+.gradient-editor .field-name { display: block; margin-bottom: 6px; }
+.gradient-stops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.gradient-stops label { position: relative; height: 24px; border-radius: 5px; border: 1px solid rgba(255, 255, 255, 0.14); overflow: hidden; cursor: pointer; transition: border-color var(--dur-fast) var(--ease-out); }
+.gradient-stops label:hover { border-color: rgba(255, 255, 255, 0.32); }
+.gradient-stops input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.slider-field.disabled { opacity: 0.45; pointer-events: none; }
 
 .range-summary { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line-soft); color: var(--text-3); font-size: 10.5px; }
 .range-summary strong { color: #e2e2e6; font-weight: 500; font-variant-numeric: tabular-nums; }
