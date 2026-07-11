@@ -186,8 +186,10 @@ function EditorWorkspace({
         </div>
         <div className="editor-header-right">
           <span className={`save-indicator ${saveState}`} aria-live="polite">
-            {saveState === "saving" ? <span className="mini-spinner" /> : <Icon name={saveState === "error" ? "info" : "check"} size={13} />}
-            {saveState === "saving" ? "Saving" : saveState === "error" ? "Save failed" : "Saved"}
+            <span className="state-swap" key={saveState}>
+              {saveState === "saving" ? <span className="mini-spinner" /> : <Icon name={saveState === "error" ? "info" : "check"} size={13} />}
+              {saveState === "saving" ? "Saving" : saveState === "error" ? "Save failed" : "Saved"}
+            </span>
           </span>
           <button className="primary-button header-export" onClick={() => void beginExport()} disabled={exportState.status === "running"}>
             <Icon name="share" size={15} /> Export

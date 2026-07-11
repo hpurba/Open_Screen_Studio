@@ -108,7 +108,11 @@ export function Library({ onOpenProject }: LibraryProps) {
         ) : (
           <section className="project-grid" aria-label="Projects">
             {visibleProjects.map((project, index) => (
-              <article className="project-card" key={project.id}>
+              <article
+                className="project-card"
+                key={project.id}
+                style={{ animationDelay: `${Math.min(index, 8) * 36}ms` }}
+              >
                 <button className="project-preview" onClick={() => onOpenProject(project.id)} aria-label={`Open ${project.title}`}>
                   <div className={`project-art art-${index % 4}`}>
                     <div className="project-browser"><span /><span /><span /><div><i /><i /><i /></div></div>
@@ -125,7 +129,11 @@ export function Library({ onOpenProject }: LibraryProps) {
                 </div>
               </article>
             ))}
-            <button className="new-project-card" onClick={() => setShowGuide(true)}><span><Icon name="plus" size={18} /></span><strong>New Recording</strong><small>Capture another Chrome tab</small></button>
+            <button
+              className="new-project-card"
+              onClick={() => setShowGuide(true)}
+              style={{ animationDelay: `${Math.min(visibleProjects.length, 9) * 36}ms` }}
+            ><span><Icon name="plus" size={18} /></span><strong>New Recording</strong><small>Capture another Chrome tab</small></button>
           </section>
         )}
       </main>

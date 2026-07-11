@@ -54,10 +54,14 @@
   --radius-card: 9px;
   --radius-sheet: 12px;
 
-  /* Motion (tuned further in the animation pass) */
+  /* Motion — Apple-feel easing curves */
   --ease-out: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.34, 1);   /* gentle overshoot */
+  --ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
   --dur-fast: 120ms;
   --dur-med: 190ms;
+  --dur-slow: 300ms;
 }
 
 * { box-sizing: border-box; }
@@ -839,6 +843,140 @@ input[type="range"]::-moz-range-thumb { width: 13px; height: 13px; border: 0; bo
   .button-compact { padding: 0 7px; }
 }
 
+/* ============================================================
+   Fine animations — Apple-feel micro-interactions
+   ============================================================ */
+
+/* Page mounts crossfade softly */
+@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
+.library-page, .editor-page, .editor-loading, .load-error { animation: page-in var(--dur-slow) var(--ease-out-quart) both; }
+
+/* Sheets rise with a gentle spring; backdrops fade */
+@keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.965); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-backdrop, .export-overlay { animation: backdrop-in 240ms var(--ease-out-quart) both; }
+.modal, .export-dialog { animation: sheet-in 340ms var(--ease-spring) both; }
+
+/* Toasts slide up from the corner */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast { animation: toast-in 320ms var(--ease-spring) both; }
+
+/* Buttons press down under the pointer */
+.button, .primary-button, .danger-button, .icon-button, .play-button {
+  transition-property: background, filter, opacity, color, transform, box-shadow;
+  transition-duration: var(--dur-fast);
+  transition-timing-function: var(--ease-out-quart);
+}
+.button:active, .primary-button:active:not(:disabled), .danger-button:active { transform: scale(0.975); }
+.icon-button:active, .play-button:active:not(:disabled) { transform: scale(0.92); }
+
+/* macOS switch: springy travel + knob squish while pressed */
+.toggle-field > i { transition: background 200ms var(--ease-in-out); }
+.toggle-field > i span { transition: left 260ms var(--ease-spring), width 160ms var(--ease-out-quart); }
+.toggle-field:active > i span { width: 17px; }
+.toggle-field input:checked:active ~ i span { left: 11px; }
+
+/* Slider thumb greets the pointer */
+input[type="range"]::-webkit-slider-thumb { transition: transform 160ms var(--ease-spring); }
+input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.08); }
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.2); }
+
+/* Segmented control: sliding thumb behind the labels */
+.segmented-control { position: relative; }
+.segmented-control::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  bottom: 2px;
+  width: calc((100% - 4px) / var(--seg-count, 2));
+  border-radius: 5px;
+  background: linear-gradient(180deg, #626268, #55555b);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px rgba(255, 255, 255, 0.1);
+  transform: translateX(calc(var(--seg-index, 0) * 100%));
+  transition: transform 240ms var(--ease-spring);
+}
+.segmented-control button { position: relative; z-index: 1; }
+.segmented-control button.active { background: transparent; box-shadow: none; }
+
+/* Inspector: tab panels glide in, selection block unfolds */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tab-panel { animation: panel-in 240ms var(--ease-out-quart) both; }
+@keyframes selection-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.inspector-section.selection-section { animation: selection-in 260ms var(--ease-out-quart) both; }
+.inspector-tabs button { transition: color var(--dur-fast) var(--ease-out-quart), background var(--dur-fast) var(--ease-out-quart), transform var(--dur-fast) var(--ease-out-quart); }
+.inspector-tabs button:active { transform: scale(0.92); }
+
+/* Timeline clips pop in and glow when selected */
+@keyframes clip-in {
+  from { opacity: 0; transform: scaleX(0.92) scaleY(0.8); }
+  to { opacity: 1; transform: scaleX(1) scaleY(1); }
+}
+.timeline-block {
+  animation: clip-in 220ms var(--ease-spring) both;
+  transition: filter var(--dur-fast) var(--ease-out-quart), border-color var(--dur-fast) var(--ease-out-quart), box-shadow var(--dur-fast) var(--ease-out-quart);
+}
+.timeline-block:hover { filter: brightness(1.07); }
+.click-marker { transition: transform 180ms var(--ease-spring), background var(--dur-fast) var(--ease-out-quart); }
+@keyframes hint-fade { from { opacity: 0; } to { opacity: 1; } }
+.empty-track-hint { animation: hint-fade 400ms var(--ease-out-quart) 120ms both; }
+
+/* Viewer: target hint drops in, crosshair breathes */
+@keyframes hint-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.target-hint { animation: hint-in 300ms var(--ease-spring) both; }
+@keyframes crosshair-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.18); opacity: 0.75; }
+}
+.target-crosshair { animation: crosshair-pulse 1.6s var(--ease-in-out) infinite; }
+@keyframes message-in { from { opacity: 0; } to { opacity: 1; } }
+.preview-message { animation: message-in 260ms var(--ease-out-quart) both; }
+
+/* Play/pause and save-state glyphs pop on change */
+@keyframes icon-pop { from { opacity: 0; transform: scale(0.72); } to { opacity: 1; transform: scale(1); } }
+.icon-swap { display: inline-grid; place-items: center; animation: icon-pop 170ms var(--ease-spring) both; }
+@keyframes state-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+.save-indicator .state-swap { display: inline-flex; align-items: center; gap: 5px; animation: state-in 240ms var(--ease-out-quart) both; }
+
+/* Library cards rise in with a soft stagger */
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.project-grid > * { animation: card-in 340ms var(--ease-out-quart) both; }
+.project-card:not(.skeleton):hover { transition-timing-function: var(--ease-spring); }
+.project-play { transition: opacity var(--dur-med) var(--ease-out-quart), transform 260ms var(--ease-spring); }
+
+/* Export dialog: shimmering render strip */
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(220%); } }
+.export-animation::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(105deg, transparent, rgba(125, 184, 255, 0.09), transparent);
+  animation: shimmer 1.9s var(--ease-in-out) infinite;
+}
+@keyframes float-gently { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+.export-animation svg { animation: float-gently 2.6s var(--ease-in-out) infinite; }
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

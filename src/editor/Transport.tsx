@@ -35,7 +35,9 @@ export function Transport({
           title={playing ? "Pause (Space)" : "Play (Space)"}
           disabled={disabled}
         >
-          <Icon name={playing ? "pause" : "play"} size={17} />
+          <span className="icon-swap" key={playing ? "pause" : "play"}>
+            <Icon name={playing ? "pause" : "play"} size={17} />
+          </span>
         </button>
         <button className="icon-button transport-skip" onClick={() => jump(5000)} aria-label="Go forward 5 seconds" title="Forward 5 seconds">
           <Icon name="skip-forward" size={17} />

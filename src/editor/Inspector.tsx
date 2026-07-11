@@ -89,10 +89,14 @@ function Segmented<T extends string | number>({
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
 }) {
+  const activeIndex = Math.max(0, options.findIndex((option) => option.value === value));
   return (
     <fieldset className="segmented-field">
       <legend>{label}</legend>
-      <div className="segmented-control">
+      <div
+        className="segmented-control"
+        style={{ "--seg-count": options.length, "--seg-index": activeIndex } as CSSProperties}
+      >
         {options.map((option) => (
           <button
             type="button"
@@ -244,6 +248,7 @@ export function Inspector({
           </Section>
         )}
 
+        <div className="tab-panel" key={tab}>
         {tab === "cursor" && (
           <>
             <div className="inspector-heading"><span className="heading-icon"><Icon name="mouse" /></span><div><h2>Cursor</h2><p>Polish pointer movement and visibility.</p></div></div>
@@ -334,6 +339,7 @@ export function Inspector({
             <div className="privacy-note"><Icon name="check" size={15} /><span>Rendered on this device. Nothing is uploaded.</span></div>
           </>
         )}
+        </div>
       </div>
     </aside>
   );
